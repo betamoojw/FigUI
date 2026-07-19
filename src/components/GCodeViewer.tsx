@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle, Maximize, ChevronDown } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle, Maximize, ChevronDown, Wrench } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -3063,11 +3063,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         )}
 
         {showToolPathControls && !loading && (
-          <div className={`absolute ${isProcessing3D ? 'top-20' : 'top-3'} left-3 z-20 w-[min(15rem,calc(100%-1.5rem))] pointer-events-none`}>
-            <div className="pointer-events-auto rounded border border-border bg-surface/80 backdrop-blur-sm p-1 shadow-sm">
+          <div className={`absolute ${isProcessing3D ? 'top-20' : 'top-3'} left-3 z-20 ${showToolPathMenu ? 'w-[min(15rem,calc(100%-1.5rem))]' : 'w-auto'} pointer-events-none`}>
+            <div className="pointer-events-auto inline-block w-full rounded border border-border bg-surface/80 backdrop-blur-sm p-1 shadow-sm">
               <button
                 type="button"
-                className={`h-8 w-full inline-flex items-center justify-between gap-2 rounded px-2 text-xs font-semibold transition-colors ${
+                className={`h-8 inline-flex items-center justify-between gap-2 rounded px-2 text-xs font-semibold transition-colors ${showToolPathMenu ? 'w-full' : 'w-auto'} ${
                   showToolPathMenu
                     ? 'bg-elevated text-text-primary'
                     : 'text-text-primary hover:bg-elevated'
@@ -3076,6 +3076,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 title="Show toolpath visibility controls"
               >
                 <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <Wrench size={12} className="shrink-0 text-text-muted" />
                   <span className="text-text-muted">Tools</span>
                   <span className="font-mono tabular-nums text-text-primary">{visibleToolCount}/{toolList.length}</span>
                 </span>
