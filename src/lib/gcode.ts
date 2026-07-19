@@ -12,14 +12,22 @@ export interface Segment {
    */
   moveType: 'rapid' | 'feed' | 'traverse'
   feedMmPerMin?: number
+  tool?: number
   /** For arcs: center offsets (relative to start). undefined for lines. */
   i?: number; j?: number; k?: number
   /** true = clockwise arc (G2) */
   cw?: boolean
 }
 
+export interface GCodeTool {
+  number: number
+  label: string
+  sourceLine: number
+}
+
 export interface GCodeModel {
   segments: Segment[]
+  tools?: GCodeTool[]
   bounds: { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number }
   totalLines: number
   /** Fixed controller waits that can be included in a runtime estimate. */
@@ -86,6 +94,32 @@ function getShift(
   }
 }
 
+function stripComments(raw: string) {
+  const comments: string[] = []
+  const withoutParens = raw.replace(/\(([^)]*)\)/g, (_match, comment) => {
+    comments.push(String(comment).trim())
+    return ' '
+  })
+  const semicolon = withoutParens.indexOf(';')
+  if (semicolon >= 0) {
+    comments.push(withoutParens.slice(semicolon + 1).trim())
+    return { code: withoutParens.slice(0, semicolon), comments }
+  }
+  return { code: withoutParens, comments }
+}
+
+function cleanToolName(value: string | undefined) {
+  const cleaned = (value ?? '')
+    .replace(/\b[GMTXYZIJKRFSPH]\s*-?(?:\d+\.?\d*|\.\d+)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return cleaned.length > 0 ? cleaned : null
+}
+
+function toolLabel(tool: number, name: string | null) {
+  return name ? `T${tool} ${name}` : `T${tool}`
+}
+
 export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCodeModel {
   const segments: Segment[] = []
   let x = 0, y = 0, z = 0
@@ -102,6 +136,10 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
   let spindleOn = false        // Track spindle state
   let spindleEverOn = false    // Whether spindle was ever activated (false = no spindle machine e.g. pen plotter)
   let feedMmPerMin = 0
+  let pendingTool: number | null = null
+  let activeTool: number | null = null
+  let sawToolChange = false
+  const tools = new Map<number, GCodeTool>()
   const fixedDelays: Array<[number, number]> = []
   const bounds = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity }
 
@@ -124,7 +162,8 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
   for (let sourceIndex = 0; sourceIndex < lines.length; sourceIndex++) {
     const raw = lines[sourceIndex]
     const sourceLine = sourceIndex + 1
-    const line = raw.split(';')[0].split('(')[0].trim().toUpperCase()
+    const stripped = stripComments(raw)
+    const line = stripped.code.trim().toUpperCase()
     if (!line) continue
 
     // Parse words
@@ -145,10 +184,29 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
       }
     }
 
+    if (Number.isFinite(words.T)) {
+      pendingTool = Math.trunc(words.T)
+      if (!sawToolChange) {
+        activeTool = pendingTool
+        if (!tools.has(activeTool)) {
+          tools.set(activeTool, { number: activeTool, label: toolLabel(activeTool, cleanToolName(stripped.comments[0])), sourceLine })
+        }
+      }
+    }
+
     // Process M codes (spindle control)
     for (const mc of mCodes) {
       if (mc === 3 || mc === 4) { spindleOn = true; spindleEverOn = true }  // M3/M4 = spindle on
       else if (mc === 5) { spindleOn = false }        // M5 = spindle off
+      else if (mc === 6 && pendingTool != null) {
+        activeTool = pendingTool
+        sawToolChange = true
+        const name = cleanToolName(stripped.comments[0]) ?? cleanToolName(stripped.code)
+        const existing = tools.get(activeTool)
+        if (!existing || existing.label === `T${activeTool}`) {
+          tools.set(activeTool, { number: activeTool, label: toolLabel(activeTool, name), sourceLine })
+        }
+      }
     }
 
     // Process G codes
@@ -235,6 +293,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
 
       const moveType = getMoveType()
       const feedData = moveType === 'rapid' || feedMmPerMin <= 0 ? {} : { feedMmPerMin }
+      const toolData = activeTool == null ? {} : { tool: activeTool }
 
       if (isArc) {
         const cw = gCodes.includes(2) || (!gCodes.includes(3) && arcMode === 2)
@@ -287,13 +346,13 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
               }
             }
           }
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, sourceLine, ...feedData })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, sourceLine, ...feedData, ...toolData })
         } else {
           // Treat degenerate arc as a line
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData, ...toolData })
         }
       } else {
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData })
+        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData, ...toolData })
       }
     }
   }
@@ -306,6 +365,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
 
   return {
     segments,
+    tools: tools.size > 0 ? Array.from(tools.values()).sort((a, b) => a.number - b.number) : undefined,
     bounds,
     totalLines: lines.length,
     fixedDelays,

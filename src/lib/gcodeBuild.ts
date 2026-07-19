@@ -5,6 +5,21 @@ export const EMPTY_FLOAT32 = new Float32Array(0)
 
 const TWO_D_BUILD_CHUNK_SIZE = 2000
 const THREE_D_BUILD_CHUNK_SIZE = 1500
+const TOOL_COLORS = [
+  [0.94, 0.63, 0.19, 1.0],
+  [0.20, 0.68, 0.90, 1.0],
+  [0.86, 0.44, 0.78, 1.0],
+  [0.28, 0.78, 0.48, 1.0],
+  [0.96, 0.38, 0.32, 1.0],
+  [0.62, 0.52, 0.96, 1.0],
+  [0.88, 0.76, 0.24, 1.0],
+  [0.36, 0.78, 0.74, 1.0],
+] as const
+
+function toolColorIndex(tool: number) {
+  const abs = Math.abs(tool)
+  return (abs > 0 ? abs - 1 : 0) % TOOL_COLORS.length
+}
 
 export function clamp01(value: number) {
   return Math.max(0, Math.min(1, value))
@@ -58,14 +73,20 @@ function appendStatic3DPathSegment(
   colors: number[],
   seg: Segment,
   showRapids: boolean,
+  hiddenTools?: Set<number>,
 ) {
   if (seg.moveType === 'rapid' && !showRapids) return
   if (seg.moveType === 'traverse' && !showRapids) return
+  if (seg.tool != null && hiddenTools?.has(seg.tool)) return
 
   const RAPID_C     = [0.4,  0.5,  0.7,  1.0] as const
   const TRAVERSE_C  = [0.35, 0.6,  0.35, 0.7] as const
   const CUT_C       = [0.94, 0.63, 0.19, 1.0] as const
-  const color = seg.moveType === 'rapid' ? RAPID_C : seg.moveType === 'traverse' ? TRAVERSE_C : CUT_C
+  const color = seg.moveType === 'rapid'
+    ? RAPID_C
+    : seg.moveType === 'traverse'
+      ? TRAVERSE_C
+      : seg.tool == null ? CUT_C : TOOL_COLORS[toolColorIndex(seg.tool)]
 
   if (seg.i !== undefined) {
     const arc = getArcGeometry(seg)
@@ -98,6 +119,12 @@ export interface Built2DPaths {
   rapidPath: Path2D
   traversePath: Path2D
   cutPath: Path2D
+  toolPaths?: Array<{
+    tool: number | null
+    rapidPath: Path2D
+    traversePath: Path2D
+    cutPath: Path2D
+  }>
 }
 
 export async function buildStatic2DPathsAsync(
@@ -108,6 +135,19 @@ export async function buildStatic2DPathsAsync(
   const rapidPath = new Path2D()
   const traversePath = new Path2D()
   const cutPath = new Path2D()
+  const hasTools = segments.some(seg => seg.tool != null)
+  const byTool = hasTools
+    ? new Map<number | null, { tool: number | null; rapidPath: Path2D; traversePath: Path2D; cutPath: Path2D }>()
+    : null
+
+  function pathsForTool(tool: number | null) {
+    let paths = byTool?.get(tool)
+    if (!paths && byTool) {
+      paths = { tool, rapidPath: new Path2D(), traversePath: new Path2D(), cutPath: new Path2D() }
+      byTool.set(tool, paths)
+    }
+    return paths
+  }
 
   if (segments.length === 0) {
     onProgress(100)
@@ -122,13 +162,23 @@ export async function buildStatic2DPathsAsync(
       const seg = segments[i]
       const path = seg.moveType === 'rapid' ? rapidPath : seg.moveType === 'traverse' ? traversePath : cutPath
       addSegmentToPath(path, seg)
+      const toolPaths = pathsForTool(seg.tool ?? null)
+      if (toolPaths) {
+        const toolPath = seg.moveType === 'rapid' ? toolPaths.rapidPath : seg.moveType === 'traverse' ? toolPaths.traversePath : toolPaths.cutPath
+        addSegmentToPath(toolPath, seg)
+      }
     }
 
     onProgress(Math.round((end / segments.length) * 100))
     if (end < segments.length) await nextAnimationFrame()
   }
 
-  return { rapidPath, traversePath, cutPath }
+  return {
+    rapidPath,
+    traversePath,
+    cutPath,
+    toolPaths: byTool ? Array.from(byTool.values()).sort((a, b) => (a.tool ?? -1) - (b.tool ?? -1)) : undefined,
+  }
 }
 
 export interface Built3DGeometry {
@@ -141,6 +191,7 @@ export async function buildStatic3DGeometryAsync(
   showRapids: boolean,
   onProgress: (progress: number) => void,
   shouldContinue: () => boolean,
+  hiddenTools?: Set<number>,
 ): Promise<Built3DGeometry> {
   const vertices: number[] = []
   const colors: number[] = []
@@ -155,7 +206,7 @@ export async function buildStatic3DGeometryAsync(
 
     const end = Math.min(start + THREE_D_BUILD_CHUNK_SIZE, segments.length)
     for (let i = start; i < end; i++) {
-      appendStatic3DPathSegment(vertices, colors, segments[i], showRapids)
+      appendStatic3DPathSegment(vertices, colors, segments[i], showRapids, hiddenTools)
     }
 
     onProgress(Math.round((end / segments.length) * 100))

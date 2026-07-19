@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle, Maximize } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle, Maximize, ChevronDown } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
@@ -29,6 +29,17 @@ const AXIS_X_COLOR  = '#ef4444'
 const AXIS_Y_COLOR  = '#22c55e'
 const AXIS_Z_COLOR  = '#60a5fa'
 const BED_COLOR     = 'rgba(100,180,255,0.35)'
+const TOOL_PATH_COLORS = ['#f0a030', '#33adde', '#db70c7', '#47c77a', '#f56252', '#9e85f5', '#e0c23d', '#5cc7bd'] as const
+const TOOL_PATH_COLOR_RGBA = [
+  [0.94, 0.63, 0.19, 1.0],
+  [0.20, 0.68, 0.90, 1.0],
+  [0.86, 0.44, 0.78, 1.0],
+  [0.28, 0.78, 0.48, 1.0],
+  [0.96, 0.38, 0.32, 1.0],
+  [0.62, 0.52, 0.96, 1.0],
+  [0.88, 0.76, 0.24, 1.0],
+  [0.36, 0.78, 0.74, 1.0],
+] as const
 
 interface Transform {
   ox: number
@@ -170,6 +181,12 @@ interface Static2DPaths {
   rapidPath: Path2D
   traversePath: Path2D
   cutPath: Path2D
+  toolPaths?: Array<{
+    tool: number | null
+    rapidPath: Path2D
+    traversePath: Path2D
+    cutPath: Path2D
+  }>
 }
 
 interface Progress2DPath {
@@ -413,6 +430,18 @@ function strokeModelPath(
   ctx.setLineDash(lineDashPx.map(value => value / safeScale))
   ctx.stroke(path)
   ctx.restore()
+}
+
+function toolPathColor(tool: number | null | undefined) {
+  if (tool == null) return CUT_COLOR_FG
+  const abs = Math.abs(tool)
+  return TOOL_PATH_COLORS[(abs > 0 ? abs - 1 : 0) % TOOL_PATH_COLORS.length]
+}
+
+function toolPathColorRgba(tool: number | null | undefined) {
+  if (tool == null) return TOOL_PATH_COLOR_RGBA[0]
+  const abs = Math.abs(tool)
+  return TOOL_PATH_COLOR_RGBA[(abs > 0 ? abs - 1 : 0) % TOOL_PATH_COLOR_RGBA.length]
 }
 
 function measureProgressAlongSegment(seg: Segment, px: number, py: number, pz: number) {
@@ -1174,10 +1203,13 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const markerGeometryRef = useRef<MarkerGeometry | null>(null)
   const pathXYLengthsRef = useRef<{ model: GCodeModel; cumulative: Float64Array } | null>(null)
   const [showTool, setShowTool] = useState(true)
+  const [hiddenTools, setHiddenTools] = useState<Set<number>>(() => new Set())
+  const [showToolPathMenu, setShowToolPathMenu] = useState(false)
   const [fileDragStatus, setFileDragStatus] = useState<'idle' | 'valid' | 'invalid'>('idle')
   const [senderExecutionProgressPercent, setSenderExecutionProgressPercent] = useState<number | null>(null)
   const showRapidsRef = useRef(true)
   const showToolRef = useRef(true)
+  const hiddenToolsRef = useRef<Set<number>>(new Set())
   const transformRef = useRef<Transform>({ ox: 0, oy: 0, scale: 1 })
   const dragRef = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null)
   const activePointersRef = useRef<Map<number, { x: number; y: number; dragMode: DragMode }>>(new Map())
@@ -1528,7 +1560,6 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
     const RAPID_C     = [0.4,  0.5,  0.7,  1.0] as const
     const TRAVERSE_C  = [0.35, 0.6,  0.35, 0.7] as const
-    const CUT_C       = [0.94, 0.63, 0.19, 1.0] as const
     const DONE_C      = [0.13, 0.77, 0.37, 1.0] as const
     const TOOL_C      = [0.94, 0.27, 0.27, 1.0] as const
     const TOOL_GLOW_C = [1.0,  0.27, 0.27, 0.55] as const
@@ -1538,6 +1569,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     for (let segIdx = 0; segIdx < segments.length; segIdx++) {
       const seg = segments[segIdx]
       if (seg.moveType !== 'feed' && !showRapidsRef.current) continue
+      if (seg.tool != null && hiddenToolsRef.current.has(seg.tool)) continue
 
       if (seg.moveType !== 'feed') {
         const nonFeedColor = seg.moveType === 'rapid' ? RAPID_C : TRAVERSE_C
@@ -1565,6 +1597,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
       const isDone    = progress !== null && segIdx < progress.segmentIndex
       const isCurrent = progress !== null && segIdx === progress.segmentIndex
       const frac      = isCurrent ? progress!.fraction : 1
+      const cutColor = toolPathColorRgba(seg.tool)
 
       if (seg.i !== undefined) {
         const arc = getArcGeometry(seg)
@@ -1579,7 +1612,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             arc.cx + Math.cos(angle2) * arc.r, arc.cy + Math.sin(angle2) * arc.r, seg.z0 + (seg.z1 - seg.z0) * t2,
           )
           const subDone = isDone || (isCurrent && t2 <= frac)
-          colors.push(...(subDone ? DONE_C : CUT_C), ...(subDone ? DONE_C : CUT_C))
+          colors.push(...(subDone ? DONE_C : cutColor), ...(subDone ? DONE_C : cutColor))
         }
       } else {
         if (isDone) {
@@ -1592,9 +1625,9 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           vertices.push(seg.x0, seg.y0, seg.z0, mx, my, mz)
           colors.push(...DONE_C, ...DONE_C)
           vertices.push(mx, my, mz, seg.x1, seg.y1, seg.z1)
-          colors.push(...CUT_C, ...CUT_C)
+          colors.push(...cutColor, ...cutColor)
         } else {
-          const c = isCurrent && frac >= 1 ? DONE_C : CUT_C
+          const c = isCurrent && frac >= 1 ? DONE_C : cutColor
           vertices.push(seg.x0, seg.y0, seg.z0, seg.x1, seg.y1, seg.z1)
           colors.push(...c, ...c)
         }
@@ -1686,12 +1719,35 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     const rapidPath = new Path2D()
     const traversePath = new Path2D()
     const cutPath = new Path2D()
+    const hasTools = mdl.segments.some(seg => seg.tool != null)
+    const byTool = hasTools
+      ? new Map<number | null, { tool: number | null; rapidPath: Path2D; traversePath: Path2D; cutPath: Path2D }>()
+      : null
+    const pathsForTool = (tool: number | null) => {
+      let paths = byTool?.get(tool)
+      if (!paths && byTool) {
+        paths = { tool, rapidPath: new Path2D(), traversePath: new Path2D(), cutPath: new Path2D() }
+        byTool.set(tool, paths)
+      }
+      return paths
+    }
     for (const seg of mdl.segments) {
       const path = seg.moveType === 'rapid' ? rapidPath : seg.moveType === 'traverse' ? traversePath : cutPath
       addSegmentToPath(path, seg)
+      const toolPaths = pathsForTool(seg.tool ?? null)
+      if (toolPaths) {
+        const toolPath = seg.moveType === 'rapid' ? toolPaths.rapidPath : seg.moveType === 'traverse' ? toolPaths.traversePath : toolPaths.cutPath
+        addSegmentToPath(toolPath, seg)
+      }
     }
 
-    const paths = { model: mdl, rapidPath, traversePath, cutPath }
+    const paths = {
+      model: mdl,
+      rapidPath,
+      traversePath,
+      cutPath,
+      toolPaths: byTool ? Array.from(byTool.values()).sort((a, b) => (a.tool ?? -1) - (b.tool ?? -1)) : undefined,
+    }
     static2DPathsRef.current = paths
     return paths
   }
@@ -1711,7 +1767,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
     for (let i = cached.lastCompletedSegment + 1; i <= lastCompletedSegment; i++) {
       const seg = mdl.segments[i]
-      if (seg.moveType === 'feed') addSegmentToPath(cached.path, seg)
+      if (seg.moveType === 'feed' && (seg.tool == null || !hiddenToolsRef.current.has(seg.tool))) addSegmentToPath(cached.path, seg)
     }
     cached.lastCompletedSegment = lastCompletedSegment
     return cached.path
@@ -1798,13 +1854,14 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   // Keep refs in sync so render() (called from non-React contexts) reads current values
   showRapidsRef.current = showRapids
   showToolRef.current = showTool
+  hiddenToolsRef.current = hiddenTools
 
   useEffect(() => {
     const previousModel = modelRef.current
     const modelChanged = model !== previousModel
     modelRef.current = model
     static2DPathsRef.current = (storePaths2D && model)
-      ? { model, rapidPath: storePaths2D.rapidPath, traversePath: storePaths2D.traversePath, cutPath: storePaths2D.cutPath }
+      ? { model, rapidPath: storePaths2D.rapidPath, traversePath: storePaths2D.traversePath, cutPath: storePaths2D.cutPath, toolPaths: storePaths2D.toolPaths }
       : null
     staticPathGeometryRef.current = (storeGeometry3D && model)
       ? {
@@ -1820,6 +1877,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     if (modelChanged) {
       if (simulationPhaseRef.current !== 'idle') stopSimulation()
       progressRef.current = null
+      setHiddenTools(new Set())
+      setShowToolPathMenu(false)
     }
     if (model && modelChanged) {
       needsFitRef.current = true
@@ -2162,7 +2221,9 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         return
       }
 
-      if (!use3DProgressOverlay) {
+      const hasHiddenTools3d = hiddenToolsRef.current.size > 0
+
+      if (!use3DProgressOverlay && !hasHiddenTools3d) {
         const staticGeometry = ensureStaticPathGeometry(mdl)
         if (!staticGeometry) return
         const toolGeometry = wpos3d
@@ -2253,10 +2314,21 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
       const staticPaths = ensureStatic2DPaths(mdl)
 
-      strokeModelPath(ctx, staticPaths.cutPath, t, CUT_COLOR_FG, 1)
-      if (showRapidsRef.current) {
-        strokeModelPath(ctx, staticPaths.traversePath, t, TRAVERSE_COLOR, 0.5, [2, 2])
-        strokeModelPath(ctx, staticPaths.rapidPath, t, RAPID_COLOR, 0.5, [4, 3])
+      if (staticPaths.toolPaths?.length) {
+        for (const toolPaths of staticPaths.toolPaths) {
+          if (toolPaths.tool != null && hiddenToolsRef.current.has(toolPaths.tool)) continue
+          strokeModelPath(ctx, toolPaths.cutPath, t, toolPathColor(toolPaths.tool), 1)
+          if (showRapidsRef.current) {
+            strokeModelPath(ctx, toolPaths.traversePath, t, TRAVERSE_COLOR, 0.5, [2, 2])
+            strokeModelPath(ctx, toolPaths.rapidPath, t, RAPID_COLOR, 0.5, [4, 3])
+          }
+        }
+      } else {
+        strokeModelPath(ctx, staticPaths.cutPath, t, CUT_COLOR_FG, 1)
+        if (showRapidsRef.current) {
+          strokeModelPath(ctx, staticPaths.traversePath, t, TRAVERSE_COLOR, 0.5, [2, 2])
+          strokeModelPath(ctx, staticPaths.rapidPath, t, RAPID_COLOR, 0.5, [4, 3])
+        }
       }
 
       const use2DProgressOverlay = progress !== null && mdl.segments.length <= LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
@@ -2266,7 +2338,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         strokeModelPath(ctx, completedPath, t, CUT_DONE, 1.5)
 
         const currentSegment = segments[progress.segmentIndex]
-        if (currentSegment?.moveType === 'feed') {
+        if (currentSegment?.moveType === 'feed' && (currentSegment.tool == null || !hiddenToolsRef.current.has(currentSegment.tool))) {
           ctx.strokeStyle = CUT_DONE
           ctx.lineWidth = 1.5
           ctx.setLineDash([])
@@ -2396,6 +2468,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     simulationActive,
     showRapids,
     showTool,
+    hiddenTools,
     isRunning,
     senderActive,
     senderAcceptedLine,
@@ -2718,6 +2791,20 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const isFileDragging = fileDragStatus !== 'idle'
   const isValidFileDragging = fileDragStatus === 'valid' && !isRunning
   const hasLoadedSource = !!sourceText && !!fileName
+  const toolList = model?.tools ?? []
+  const showToolPathControls = toolList.length > 1
+  const visibleToolCount = showToolPathControls ? toolList.length - hiddenTools.size : 0
+
+  function toggleToolPath(tool: number) {
+    setHiddenTools(prev => {
+      const next = new Set(prev)
+      if (next.has(tool)) next.delete(tool)
+      else next.add(tool)
+      return next
+    })
+    progress2DPathRef.current = null
+    scheduleRender()
+  }
 
   const VCX = 45, VCY = 45, CUBE_S = 16
   const viewCubeData = is3D ? get3DViewCubeData(orbitState, cameraRef.current.up, VCX, VCY, CUBE_S) : null
@@ -2971,6 +3058,58 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             </div>
             <div className="h-1.5 bg-elevated rounded-full overflow-hidden">
               <div className="h-full bg-ok rounded-full transition-all duration-150" style={{ width: `${processing3DProgress}%` }} />
+            </div>
+          </div>
+        )}
+
+        {showToolPathControls && !loading && (
+          <div className={`absolute ${isProcessing3D ? 'top-20' : 'top-3'} left-3 z-20 w-[min(15rem,calc(100%-1.5rem))] pointer-events-none`}>
+            <div className="pointer-events-auto rounded border border-border bg-surface/80 backdrop-blur-sm p-1 shadow-sm">
+              <button
+                type="button"
+                className={`h-8 w-full inline-flex items-center justify-between gap-2 rounded px-2 text-xs font-semibold transition-colors ${
+                  showToolPathMenu
+                    ? 'bg-elevated text-text-primary'
+                    : 'text-text-primary hover:bg-elevated'
+                }`}
+                onClick={() => setShowToolPathMenu(open => !open)}
+                title="Show toolpath visibility controls"
+              >
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <span className="text-text-muted">Tools</span>
+                  <span className="font-mono tabular-nums text-text-primary">{visibleToolCount}/{toolList.length}</span>
+                </span>
+                <ChevronDown
+                  size={13}
+                  className={`shrink-0 text-text-muted transition-transform ${showToolPathMenu ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {showToolPathMenu && (
+                <div className="mt-1 flex flex-col gap-1">
+                  {toolList.map(tool => {
+                    const hidden = hiddenTools.has(tool.number)
+                    return (
+                      <button
+                        key={tool.number}
+                        type="button"
+                        className={`h-7 w-full min-w-0 inline-flex items-center gap-1.5 rounded border px-2 text-xs font-semibold transition-colors ${
+                          hidden
+                            ? 'border-border bg-elevated text-text-dim opacity-60'
+                            : 'border-border/80 bg-surface text-text-primary hover:border-info/60'
+                        }`}
+                        onClick={() => toggleToolPath(tool.number)}
+                        title={`${hidden ? 'Show' : 'Hide'} ${tool.label}`}
+                      >
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: toolPathColor(tool.number), opacity: hidden ? 0.35 : 1 }}
+                        />
+                        <span className="min-w-0 truncate text-left">{tool.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
