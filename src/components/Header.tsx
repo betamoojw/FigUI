@@ -4,7 +4,7 @@ import { useMachineStore, stateColor, stateBg } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { useJobRuntimeEstimate } from '../lib/jobRuntime'
 import { sendRealtime } from '../lib/ws'
-import { alarmRequiresSoftReset, clearMachineAlarm } from '../lib/alarm'
+import { alarmClearActionTitle, clearMachineAlarm } from '../lib/alarm'
 import { runMacro, MACRO_BTN_CLASS } from '../lib/macros'
 import { useState, useEffect, useMemo } from 'react'
 
@@ -67,7 +67,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
         <button
           className={`tag ${stateBg(status.state)} ${stateColor(status.state)} cursor-pointer hover:opacity-80 active:opacity-60 text-base`}
           onClick={() => clearMachineAlarm(status.alarmCode)}
-          title={alarmRequiresSoftReset(status.alarmCode) ? 'Click to clear alarm (soft reset required)' : 'Click to clear alarm ($X)'}
+          title={alarmClearActionTitle(status.alarmCode)}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-current text-base" />
           {status.state}
