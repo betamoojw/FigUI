@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  review_details: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/coverage/**"
+    - "!**/.cache/**"
+    - "!**/.temp/**"
+    - "!**/package-lock.json"
+    - "!**/*.lock"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.jpeg"
+    - "!**/*.gif"
+    - "!**/*.webp"
+    - "!**/*.ico"
+    - "!**/*.woff"
+    - "!**/*.woff2"
+
+  path_instructions:
+    - path: "src/**/*.{ts,tsx}"
+      instructions: |
+        Focus on correctness, type safety, React state flow, and user-visible regressions.
+    - path: "plugins/**"
+      instructions: |
+        Review plugin changes for browser compatibility, sandboxing assumptions, and integration risks.
+        For store plugins, verify each plugin folder has a proper plugin.json manifest and a matching plugins/registry.json entry.
+        Confirm manifest metadata stays consistent with the registry: id, name, description, version, author, entry, base URL, and files.
+        Require the icon file to be named exactly "icon.png", referenced as "icon.png" in plugin.json, included in files when files is present, and available beside the manifest.
+        Flag missing plugin.json files, malformed JSON, stale registry versions, incorrect base URLs, or registry entries that do not point to the plugin folder.
+    - path: "scripts/**"
+      instructions: |
+        Review scripts for portability, clear failure behavior, and accidental destructive operations.
+
+chat:
+  auto_reply: true
