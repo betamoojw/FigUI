@@ -17,4 +17,4 @@ A FigUI plugin for camera motion control rigs running FluidNC with plain cartesi
 
 ## Install
 
-Copy this folder to `/plugins/` (internal) or `/sd/plugins/` and refresh the Plugins tab, or use Plugins → Add.
+Copy this folder to `/sd/plugins/` and refresh the Plugins tab, or use Plugins → Add.

@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Puzzle, RefreshCw, Upload, Store, HardDrive, Server, Trash2, Download, AlertCircle, X, CheckCircle, Search } from 'lucide-react'
-import { discoverPlugins, uploadFolderPlugin, deletePlugin, fetchRegistry, installStorePlugin } from '../lib/plugins'
+import { discoverPlugins, uploadFolderPlugin, deletePlugin, fetchRegistry, installStorePlugin, PLUGIN_SD_REQUIRED_MESSAGE } from '../lib/plugins'
 import { PluginFrame } from './PluginFrame'
 import type { Plugin, StoreEntry, ActiveLayout } from '../types'
 import { getEffectiveLayout } from '../types'
 import { semverGt } from '../lib/updateCheck'
 
 type Tab = 'installed' | 'store'
-type FsDest = 'local' | 'sd'
 
 let pluginsCache: Plugin[] | null = null
 
@@ -18,36 +17,9 @@ interface ProgressState {
   label: string
 }
 
-function StoragePicker({ onPick, onClose }: { onPick: (fs: FsDest) => void; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="bg-surface border border-border rounded shadow-xl w-64 p-4 animate-in space-y-3"
-        onClick={e => e.stopPropagation()}
-      >
-        <p className="text-base font-semibold text-text-primary">Install to…</p>
-        <div className="flex flex-col gap-2">
-          {([
-            ['local', 'Internal Storage', Server,  'Flash memory on the controller'],
-            ['sd',    'SD Card',          HardDrive, 'Recommended for larger plugins'],
-          ] as const).map(([fs, label, Icon, hint]) => (
-            <button
-              key={fs}
-              onClick={() => onPick(fs)}
-              className="flex items-center gap-3 p-3 rounded border border-border
-                         hover:border-accent hover:bg-accent/5 transition-colors text-left"
-            >
-              <Icon size={18} className="text-text-muted shrink-0" />
-              <div>
-                <p className="text-base font-medium text-text-primary">{label}</p>
-                <p className="text-sm text-text-dim">{hint}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
+function installErrorMessage(err: any, fallback: string): string {
+  const message = err?.message ?? fallback
+  return message === 'No SD card' ? PLUGIN_SD_REQUIRED_MESSAGE : message
 }
 
 function PluginIcon({ src, size = 22 }: { src?: string; size?: number }) {
@@ -75,10 +47,6 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
   const [scanning, setScanning] = useState(pluginsCache === null)
   const [activePlugin, setActivePlugin] = useState<Plugin | null>(null)
   const [query, setQuery] = useState('')
-
-  const [destFs, setDestFs] = useState<FsDest>('local')
-  const [showAddPicker, setShowAddPicker] = useState(false)
-  const [pendingInstall, setPendingInstall] = useState<StoreEntry | null>(null)
 
   // Upload folder state
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -127,13 +95,17 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
     if (tab === 'store') loadStore()
   }, [tab, loadStore])
 
+  function handleAddFromFolder() {
+    folderInputRef.current?.click()
+  }
+
   async function handleFolderSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files
     if (!files || files.length === 0) return
     setUploadDone(false)
     setProgress({ current: 0, total: files.length, filename: '', label: 'Preparing…' })
     try {
-      await uploadFolderPlugin(files, destFs, (current, total, filename) => {
+      await uploadFolderPlugin(files, 'sd', (current, total, filename) => {
         setProgress({ current, total, filename, label: 'Uploading' })
       })
       setUploadDone(true)
@@ -141,7 +113,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
       await scan()
       setTab('installed')
     } catch (err: any) {
-      alert(err.message ?? 'Upload failed')
+      alert(installErrorMessage(err, 'Upload failed'))
       setProgress(null)
     } finally {
       e.target.value = ''
@@ -158,12 +130,12 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
     setConfirmDelete(null)
   }
 
-  async function handleInstall(entry: StoreEntry, fs: FsDest = destFs) {
+  async function handleInstall(entry: StoreEntry) {
     setInstallingId(entry.id)
     setUploadDone(false)
     setProgress({ current: 0, total: 1, filename: '', label: 'Installing' })
     try {
-      await installStorePlugin(entry, fs, (current, total, filename) => {
+      await installStorePlugin(entry, 'sd', (current, total, filename) => {
         setProgress({ current, total, filename, label: 'Installing' })
       })
       setJustInstalled(entry.id)
@@ -171,7 +143,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
       await scan()
       setTimeout(() => setJustInstalled(null), 3000)
     } catch (err: any) {
-      alert(err.message ?? 'Install failed')
+      alert(installErrorMessage(err, 'Install failed'))
       setProgress(null)
     } finally {
       setInstallingId(null)
@@ -191,7 +163,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
       await scan()
       setTimeout(() => setJustInstalled(null), 3000)
     } catch (err: any) {
-      alert(err.message ?? 'Update failed')
+      alert(installErrorMessage(err, 'Update failed'))
       setProgress(null)
     } finally {
       setUpdatingId(null)
@@ -222,7 +194,7 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
         <div className={`flex items-center gap-2 ${pad} pb-3 border-b border-border shrink-0`}>
           <span className="text-base text-text-muted uppercase tracking-wide font-medium flex-1">Plugins</span>
           <button
-            onClick={() => setShowAddPicker(true)}
+            onClick={handleAddFromFolder}
             className="btn btn-ghost text-base py-1 px-2 gap-1.5 shrink-0"
             title="Install from folder"
           >
@@ -467,9 +439,10 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
                           </span>
                         ) : (
                           <button
-                            onClick={() => setPendingInstall(entry)}
+                            onClick={() => handleInstall(entry)}
                             disabled={!!installingId}
                             className="btn btn-ghost text-sm px-2.5 py-1.5 gap-1.5 disabled:opacity-40"
+                            title={`Install ${entry.name}`}
                           >
                             {installing
                               ? <><RefreshCw size={11} className="animate-spin" /> Installing…</>
@@ -485,22 +458,6 @@ export function PluginLauncher({ isTablet, onLaunchPanel, activeLayout }: { isTa
           )}
         </div>
       </div>
-
-      {/* Storage picker — Add from folder */}
-      {showAddPicker && (
-        <StoragePicker
-          onPick={fs => { setShowAddPicker(false); setDestFs(fs); folderInputRef.current?.click() }}
-          onClose={() => setShowAddPicker(false)}
-        />
-      )}
-
-      {/* Storage picker — Store install */}
-      {pendingInstall && (
-        <StoragePicker
-          onPick={fs => { setDestFs(fs); const entry = pendingInstall; setPendingInstall(null); handleInstall(entry, fs) }}
-          onClose={() => setPendingInstall(null)}
-        />
-      )}
 
       {/* Hidden folder input */}
       <input

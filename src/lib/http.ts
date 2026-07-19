@@ -118,6 +118,18 @@ function fmtBytes(n: number): string {
   return `${(n / 1048576).toFixed(1)} MB`
 }
 
+function uploadStatusError(text: string): string | null {
+  if (!text.trim()) return null
+  try {
+    const data = JSON.parse(text)
+    const status = typeof data?.status === 'string' ? data.status.trim() : ''
+    if (!status || /^ok$/i.test(status)) return null
+    return status
+  } catch {
+    return null
+  }
+}
+
 async function checkFreeSpace(fs: 'sd' | 'local', bytes: number, dir: string, filename: string): Promise<void> {
   if (fs !== 'local') return
   try {
@@ -165,7 +177,14 @@ export async function uploadFile(
     xhr.upload.onloadstart = () => onPhase?.('uploading')
     xhr.upload.onload = () => onPhase?.('finishing')
 
-    xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(`Upload ${xhr.status}`)))
+    xhr.onload = () => {
+      if (xhr.status >= 300) {
+        reject(new Error(`Upload ${xhr.status}`))
+        return
+      }
+      const statusError = uploadStatusError(xhr.responseText)
+      statusError ? reject(new Error(statusError)) : resolve()
+    }
     xhr.onerror = () => reject(new Error('Upload failed'))
     xhr.open('POST', `${base}${fsEndpoint(fs)}`)
     xhr.send(fd)

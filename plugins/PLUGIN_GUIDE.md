@@ -1,6 +1,6 @@
 # FigUI Plugin Developer Guide
 
-Plugins are self-contained HTML files that run inside FigUI and can communicate with your FluidNC machine. They live in sandboxed iframes, inherit the UI theme automatically, and can be installed on internal storage or SD card.
+Plugins are self-contained HTML files that run inside FigUI and can communicate with your FluidNC machine. They live in sandboxed iframes, inherit the UI theme automatically, and are installed on the SD card.
 
 ---
 
@@ -463,10 +463,10 @@ Settings are stored at `/plugins/<plugin-id>/settings.json`, co-located with the
 ## Installing a plugin
 
 ### From folder
-In FigUI → Plugins tab → **Add** → choose storage location → select your plugin folder. FigUI uploads all files automatically.
+In FigUI → Plugins tab → **Add** → select your plugin folder. FigUI uploads all files to SD storage automatically.
 
 ### On the device directly
-Copy the plugin folder to `/plugins/` on internal storage or `/sd/plugins/` on SD card. Then hit the refresh button in the Plugins tab.
+Copy the plugin folder to `/sd/plugins/` on the SD card. Then hit the refresh button in the Plugins tab.
 
 ---
 

@@ -2,6 +2,7 @@ import { listFiles, fetchFileContent, getBase, createDir, deleteFile, deleteDir,
 import type { Plugin, PluginManifest, StoreEntry } from '../types'
 
 const PLUGINS_PATH = '/plugins'
+export const PLUGIN_SD_REQUIRED_MESSAGE = 'Plugins can only be installed on SD storage. Please insert an SD card and try again.'
 
 export const STORE_REGISTRY_URL = import.meta.env.DEV
   ? '/plugins/registry.json'
