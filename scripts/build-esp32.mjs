@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, statSync, existsSync } from 'fs'
 import { gzipAsync } from '@gfx/zopfli'
 
 const KB = 1024
-const ESP32_SPIFFS_LIMIT = 1_400 * KB
+const ESP32_SPIFFS_LIMIT = 178 * KB
 
 function hr() { console.log('─'.repeat(50)) }
 function fmt(bytes) { return `${(bytes / KB).toFixed(1)} KB` }

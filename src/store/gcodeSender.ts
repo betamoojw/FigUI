@@ -31,6 +31,7 @@ interface StreamBlock {
 interface SenderState {
   phase: SenderPhase
   fileName: string | null
+  showRuntimeEstimate: boolean
   jobId: number
   acceptedLine: number | null
   failureLine: number | null
@@ -40,7 +41,7 @@ interface SenderState {
   totalBlocks: number
   notice: string | null
   error: string | null
-  start: (text: string, fileName: string) => boolean
+  start: (text: string, fileName: string, options?: { showRuntimeEstimate?: boolean }) => boolean
   pause: () => void
   resume: () => void
   abort: () => void
@@ -420,6 +421,7 @@ function pump() {
 export const useGCodeSenderStore = create<SenderState>((set, get) => ({
   phase: 'idle',
   fileName: null,
+  showRuntimeEstimate: true,
   jobId: 0,
   acceptedLine: null,
   failureLine: null,
@@ -430,7 +432,7 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
   notice: null,
   error: null,
 
-  start: (text, fileName) => {
+  start: (text, fileName, options) => {
     const machine = useMachineStore.getState()
     if (!isSocketOpen() || !machine.connected || machine.status.state !== 'Idle') return false
     if (['streaming', 'paused', 'draining'].includes(get().phase)) return false
@@ -473,6 +475,7 @@ export const useGCodeSenderStore = create<SenderState>((set, get) => ({
     set({
       phase: 'streaming',
       fileName,
+      showRuntimeEstimate: options?.showRuntimeEstimate !== false,
       jobId: get().jobId + 1,
       acceptedLine: null,
       failureLine: null,

@@ -1,17 +1,18 @@
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react'
-import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle } from 'lucide-react'
+import { Eye, Axis3D, Maximize2, Crosshair, Navigation, Play, Pause, Square, CloudDrizzle, Waves, PowerOff, Box, Zap, Orbit, Hand, ListStart, RotateCcw, FilePlus, X, AlertTriangle, Maximize } from 'lucide-react'
 import { type GCodeModel, type Segment } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime, STATUS_POLL_INTERVAL_MS } from '../lib/ws'
 import type { ControllerSettings, MachineStatus, Units } from '../types'
-import { displayToMm, mmToDisplay } from '../lib/units'
+import { displayToMm, feedUnitLabel, linearUnitLabel, mmToDisplay } from '../lib/units'
 import { buildJobTimingEstimate, distributeFixedDelays, formatRuntime, useJobRuntimeEstimate, type JobTimingEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 import { RestartFromLineDialog } from './RestartFromLineDialog'
 import { useGCodeSenderStore } from '../store/gcodeSender'
 import { GCODE_ACCEPT_ATTRIBUTE, isGCodeFileName } from '../lib/gcodeFiles'
+import { buildFramingGCode, type FramingMode } from '../lib/gcodeOutline'
 
 const GCODE_EXTENSIONS_PREVIEW = '.g, .nc, .gcode, .ngc, .tap, or .cnc'
 
@@ -117,6 +118,9 @@ const TOOLHEAD_CONE_RADIUS = 0.85
 const TOOLHEAD_TIP_CROSS = 0.35
 const TOOLHEAD_TIP_STEM = 1.25
 const LOCAL_SENDER_WARNING_ACK_KEY = 'gcode.localSenderWarningAcknowledged'
+const FRAMING_MODE_KEY = 'gcode.framingMode'
+const FRAMING_FEED_KEY = 'gcode.framingFeedMmPerMin'
+const FRAMING_CLEARANCE_KEY = 'gcode.framingClearanceMm'
 const SIMULATION_SPEED_MIN = 25
 const SIMULATION_SPEED_MAX = 10000
 const SIMULATION_SPEED_STEP = 25
@@ -999,6 +1003,25 @@ function fmtNum(mmValue: number, units: Units): string {
   return value.toFixed(value % 1 ? 1 : 0)
 }
 
+function getStoredFramingMode(): FramingMode {
+  const value = localStorage.getItem(FRAMING_MODE_KEY)
+  return value === 'contour' || value === 'rectangle' ? value : 'rectangle'
+}
+
+function getStoredPositiveNumber(key: string, fallback: number) {
+  const parsed = Number.parseFloat(localStorage.getItem(key) ?? '')
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function getStoredNonNegativeNumber(key: string, fallback: number) {
+  const parsed = Number.parseFloat(localStorage.getItem(key) ?? '')
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function formatInputValue(value: number, decimals: number) {
+  return value.toFixed(decimals).replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '')
+}
+
 function drawOrigin(ctx: CanvasRenderingContext2D, t: Transform) {
   const len = 20
   ctx.lineWidth = 1.5
@@ -1700,6 +1723,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const units = useMachineStore(s => s.units)
   const senderPhase = useGCodeSenderStore(s => s.phase)
   const senderJobId = useGCodeSenderStore(s => s.jobId)
+  const senderShowRuntimeEstimate = useGCodeSenderStore(s => s.showRuntimeEstimate)
   const senderAcceptedLine = useGCodeSenderStore(s => s.acceptedLine)
   const senderNotice = useGCodeSenderStore(s => s.notice)
   const senderError = useGCodeSenderStore(s => s.error)
@@ -1720,7 +1744,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     { active: senderActive, key: `${senderJobId}|${fileName ?? ''}` },
   )
   const progressPercent = runtime.progressPercent
-  const showEstimatedTiming = runtime.source === 'estimated'
+  const showEstimatedTiming = runtime.source === 'estimated' && (!senderActive || senderShowRuntimeEstimate)
   const simulationActive = simulationPhase !== 'idle'
   const simulationPaused = simulationPhase === 'paused'
   const machineJobActive = status.state === 'Run' || status.state === 'Hold' || senderActive
@@ -1742,6 +1766,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [coolantState, setCoolantState] = useState<'off' | 'mist' | 'flood'>('off')
   const [showRestartFromLine, setShowRestartFromLine] = useState(false)
   const [showLocalSenderWarning, setShowLocalSenderWarning] = useState(false)
+  const [showFramingDialog, setShowFramingDialog] = useState(false)
+  const [framingMode, setFramingMode] = useState<FramingMode>(() => getStoredFramingMode())
+  const [framingFeedInput, setFramingFeedInput] = useState(() => formatInputValue(mmToDisplay(getStoredPositiveNumber(FRAMING_FEED_KEY, 1000), units), units === 'in' ? 2 : 0))
+  const [framingClearanceInput, setFramingClearanceInput] = useState(() => formatInputValue(mmToDisplay(getStoredNonNegativeNumber(FRAMING_CLEARANCE_KEY, 5), units), units === 'in' ? 3 : 1))
+  const [framingError, setFramingError] = useState<string | null>(null)
   const [restartInitialLine, setRestartInitialLine] = useState<number | null>(null)
   const isLocalFile = !!sourceText && !loadedPath
   const simulationProgressPercent = simulationTotalSeconds && simulationTotalSeconds > 0
@@ -2638,6 +2667,54 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     startSender(sourceText, fileName)
   }
 
+  useEffect(() => {
+    setFramingFeedInput(formatInputValue(mmToDisplay(getStoredPositiveNumber(FRAMING_FEED_KEY, 1000), units), units === 'in' ? 2 : 0))
+    setFramingClearanceInput(formatInputValue(mmToDisplay(getStoredNonNegativeNumber(FRAMING_CLEARANCE_KEY, 5), units), units === 'in' ? 3 : 1))
+  }, [units])
+
+  function updateFramingMode(mode: FramingMode) {
+    setFramingMode(mode)
+    localStorage.setItem(FRAMING_MODE_KEY, mode)
+    setFramingError(null)
+  }
+
+  function startFramingRoutine() {
+    if (!model) return
+    const feedDisplay = Number.parseFloat(framingFeedInput)
+    const clearanceDisplay = Number.parseFloat(framingClearanceInput)
+    if (!Number.isFinite(feedDisplay) || feedDisplay <= 0) {
+      setFramingError('Enter a framing feed rate greater than zero.')
+      return
+    }
+    if (!Number.isFinite(clearanceDisplay) || clearanceDisplay < 0) {
+      setFramingError('Enter a clearance height of zero or greater.')
+      return
+    }
+
+    const feedMmPerMin = displayToMm(feedDisplay, units)
+    const clearanceMm = displayToMm(clearanceDisplay, units)
+    const result = buildFramingGCode(model, { mode: framingMode, feedMmPerMin, clearanceMm })
+    if (!result) {
+      setFramingError('This file has no cutting moves to frame.')
+      return
+    }
+
+    localStorage.setItem(FRAMING_MODE_KEY, framingMode)
+    localStorage.setItem(FRAMING_FEED_KEY, String(feedMmPerMin))
+    localStorage.setItem(FRAMING_CLEARANCE_KEY, String(clearanceMm))
+    const started = startSender(
+      result,
+      `${fileName ?? 'job'} ${framingMode === 'rectangle' ? 'rectangle' : 'contour'} frame`,
+      { showRuntimeEstimate: false },
+    )
+    if (!started) {
+      setFramingError('Framing can start only while connected and idle.')
+      return
+    }
+    setShowFramingDialog(false)
+    setFramingError(null)
+  }
+
   const isFileDragging = fileDragStatus !== 'idle'
   const isValidFileDragging = fileDragStatus === 'valid' && !isRunning
   const hasLoadedSource = !!sourceText && !!fileName
@@ -2901,15 +2978,27 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         {model && !isViewerStartBlocked && !machineJobActive && (
           <div className={`absolute ${isProcessing3D ? 'top-20' : 'top-3'} right-3 left-3 sm:left-auto z-20 flex justify-end pointer-events-none`}>
             {!simulationActive ? (
-              <button
-                type="button"
-                className="pointer-events-auto flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-accent/60 hover:text-accent active:bg-elevated"
-                onClick={startSimulation}
-                title="Preview the toolpath motion without sending commands"
-              >
-                <Play size={14} />
-                Simulate
-              </button>
+              <div className="pointer-events-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-info/60 hover:text-info active:bg-elevated disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text-primary"
+                  onClick={() => { setFramingError(null); setShowFramingDialog(true) }}
+                  disabled={!connected || status.state !== 'Idle'}
+                  title={!connected || status.state !== 'Idle' ? 'Connect to an idle controller before framing' : 'Frame the cutting extents at clearance height'}
+                >
+                  <Maximize size={14} />
+                  Frame
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-accent/60 hover:text-accent active:bg-elevated"
+                  onClick={startSimulation}
+                  title="Preview the toolpath motion without sending commands"
+                >
+                  <Play size={14} />
+                  Simulate
+                </button>
+              </div>
             ) : (
               <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-2 py-1.5 shadow-sm">
                 <span className="hidden sm:inline px-1.5 text-xs font-semibold uppercase tracking-wide text-text-muted">Simulation</span>
@@ -3322,6 +3411,96 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           onPrepared={senderPhase === 'error' ? dismissSender : undefined}
           onClose={() => { setShowRestartFromLine(false); setRestartInitialLine(null) }}
         />
+      )}
+      {showFramingDialog && model && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-3 sm:p-6" onClick={() => setShowFramingDialog(false)}>
+          <form
+            className="w-full max-w-md rounded-lg border border-border bg-surface shadow-2xl animate-in"
+            onSubmit={event => {
+              event.preventDefault()
+              startFramingRoutine()
+            }}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3.5">
+              <div className="flex min-w-0 items-center gap-2 text-lg font-semibold text-text-primary">
+                <Maximize size={19} className="shrink-0 text-info" />
+                Frame job
+              </div>
+              <button
+                type="button"
+                className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-elevated"
+                onClick={() => setShowFramingDialog(false)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-4 py-4">
+              <div className="grid grid-cols-2 gap-1 rounded border border-border bg-elevated p-1">
+                {(['rectangle', 'contour'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`rounded px-3 py-2 text-sm font-semibold transition-colors ${framingMode === mode ? 'bg-info/15 text-info' : 'text-text-muted hover:text-text-primary'}`}
+                    onClick={() => updateFramingMode(mode)}
+                    title={mode === 'rectangle' ? 'Frame the cutting bounds as a rectangle' : 'Follow the exterior cutting contour'}
+                  >
+                    {mode === 'rectangle' ? 'Rectangle' : 'Contour'}
+                  </button>
+                ))}
+              </div>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase text-text-muted">Feed rate ({feedUnitLabel(units)})</span>
+                <input
+                  className="input-field font-mono"
+                  inputMode="decimal"
+                  value={framingFeedInput}
+                  onChange={event => { setFramingFeedInput(event.currentTarget.value); setFramingError(null) }}
+                  title="Framing motion feed rate"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase text-text-muted">Clearance above top ({linearUnitLabel(units)})</span>
+                <input
+                  className="input-field font-mono"
+                  inputMode="decimal"
+                  value={framingClearanceInput}
+                  onChange={event => { setFramingClearanceInput(event.currentTarget.value); setFramingError(null) }}
+                  title="Vertical clearance above the highest cutting move"
+                />
+              </label>
+
+              {framingError && (
+                <div className="rounded border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {framingError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-border px-4 py-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="btn btn-ghost justify-center px-4 py-2 text-sm"
+                onClick={() => setShowFramingDialog(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-ok-solid justify-center gap-2 px-4 py-2 text-sm font-semibold"
+                disabled={!connected || status.state !== 'Idle'}
+                title={!connected || status.state !== 'Idle' ? 'Connect to an idle controller before framing' : 'Start framing routine'}
+              >
+                <Play size={14} />
+                Start frame
+              </button>
+            </div>
+          </form>
+        </div>
       )}
       {showLocalSenderWarning && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-3 sm:p-6" onClick={() => setShowLocalSenderWarning(false)}>
