@@ -1,7 +1,7 @@
 {
   "name": "Motion Slider",
   "description": "3D camera slider control — X slide rail, Y pan, Z tilt. Drag the virtual rig, capture keyframes, time each move in milliseconds.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entry": "index.html",
   "icon": "icon.png",
   "layout": "workspace",

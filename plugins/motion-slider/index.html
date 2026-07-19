@@ -18,10 +18,6 @@
 
   /* ---- viewport ---- */
   #stage { position: relative; flex: 1; min-width: 0; }
-  #cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
-  #cv.dragging { cursor: grabbing; }
-  #cv.handle { cursor: pointer; }
-
   /* HUD wraps after ~3 chips so ABC row sits cleanly under XYZ when space is tight */
   .hud { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; max-width: calc(100% - 100px); }
   /* auxHud is a layout-transparent wrapper — its chip children flow directly in the .hud flex row */
@@ -44,24 +40,19 @@
   .chip.aux-c .val { color: var(--teal,   #2dd4bf); }
 
   #statusRow { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; align-items: center; pointer-events: auto; }
-  #viewToggle { padding: 4px 11px; border-radius: 999px; font-weight: 700; font-size: 11px; letter-spacing: .07em;
-    cursor: pointer; background: var(--slider-btn-bg, var(--surface, #141a26)); border: 1px solid var(--slider-btn-border, var(--border, #232c3d));
-    color: var(--slider-btn-text, var(--text-muted, #93a0bb)); transition: background .18s, color .18s, border-color .18s, box-shadow .18s; line-height: 1.4; }
-  #viewToggle:hover { background: var(--slider-btn-hover-bg, var(--surface, #141a26)); border-color: var(--slider-btn-hover-border, var(--accent, #f0a030)); box-shadow: 0 0 0 1px var(--slider-btn-hover-ring, rgba(240,160,48,.22)); }
-  #viewToggle.active { background: var(--slider-btn-primary, var(--accent, #f0a030)); border-color: var(--slider-btn-primary, var(--accent, #f0a030)); color: var(--slider-btn-primary-text, #fff); }
   #stateChip { padding: 5px 12px; border-radius: 999px;
     font-weight: 700; font-size: 12px; background: var(--surface, #141a26); border: 1px solid var(--border, #232c3d); }
   #stateChip.Idle  { color: var(--ok, #4ade80); }
   #stateChip.Run, #stateChip.Jog { color: var(--info, #60a5fa); }
   #stateChip.Hold  { color: var(--warn, #facc15); }
   #stateChip.Alarm { color: var(--danger, #f87171); }
-  #threeContainer { position: absolute; inset: 0; display: none; overflow: hidden; background: #cdd0d6; touch-action: none; }
+  #threeContainer { position: absolute; inset: 0; overflow: hidden; background: #cdd0d6; touch-action: none; }
 
   #hint { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
     color: var(--text-dim, #5d6a85); font-size: 11px; white-space: nowrap; pointer-events: none; }
 
   /* ---- on-screen joysticks (X slide left, Pan/Tilt right) — overlay #stage, so they
-     sit above whichever view (#cv or #threeContainer) is currently active ---- */
+     sit above the #threeContainer scene view ---- */
   #joyLayer { position: absolute; inset: 0; display: none; pointer-events: none; z-index: 6; }
   #joyLayer.on { display: block; }
   .joyBase {
@@ -222,8 +213,10 @@
   @keyframes recPulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
   button.icon { min-width: 34px; min-height: 34px; padding: 6px; font-size: 13px; border-radius: 10px; }
 
-  .toggle { position: relative; width: 44px; height: 24px; min-width: 44px; min-height: 24px; padding: 0; border-radius: 999px; background: var(--bg, #0c1018);
-    border: 1px solid var(--border-strong, #324059); cursor: pointer; flex-shrink: 0; display: block; appearance: none; }
+  .toggle { position: relative; width: 44px; height: 24px; min-height: 24px; border-radius: 999px; background: var(--bg, #0c1018);
+    border: 1px solid var(--border-strong, #324059); cursor: pointer; flex-shrink: 0;
+    padding: 0; appearance: none; -webkit-appearance: none; }
+  .toggle:focus-visible { outline: 2px solid var(--accent, #f0a030); outline-offset: 2px; }
   .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
     background: var(--text-muted, #93a0bb); transition: all .15s; }
   .toggle.on { background: var(--slider-btn-primary, var(--accent, #f0a030)); border-color: var(--slider-btn-primary, var(--accent, #f0a030)); }
@@ -286,7 +279,8 @@
 
   /* keyframes */
   #kfList { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; max-height: 38vh; overflow-y: auto; }
-  .kf { background: var(--bg, #0c1018); border: 1px solid var(--border, #232c3d); border-radius: 12px; padding: 8px; }
+  .kf { background: var(--bg, #0c1018); border: 1px solid var(--border, #232c3d); border-radius: 12px; padding: 8px;
+    container-type: inline-size; }
   .kf.active { border-color: var(--accent, #f0a030); }
   .kf .top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
   .kf .num { font-weight: 800; color: var(--accent, #f0a030); width: 22px; font-size: 12px; }
@@ -294,7 +288,9 @@
   .kf .axes { display: flex; gap: 4px; align-items: center; }
   .kf .axes span { font-size: 10px; color: var(--text-dim, #5d6a85); }
   .kf .bottom { display: flex; align-items: center; gap: 6px; }
-  .kf .ms { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+  /* overflow:hidden guarantees badges can never overlap the row buttons even
+     where container queries are unsupported — text clips instead */
+  .kf .ms { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; overflow: hidden; }
   .kf .ms input { width: 112px; flex-shrink: 0; }
   .kf .ms span { font-size: 10px; color: var(--text-dim, #5d6a85); }
   .kf .ms .dwell {
@@ -311,13 +307,63 @@
     border-radius: 5px;
     padding: 2px 5px;
     font-size: 10px;
+    white-space: nowrap;
   }
-  .kf .warn { color: var(--warn, #facc15); font-size: 10px; }
+  .kf .warn { color: var(--warn, #facc15); font-size: 10px; white-space: nowrap; }
+  /* Narrow panel: collapse the badges to just their icon (full text stays
+     available as a hover/long-press tooltip via title=) */
+  @container (max-width: 430px) {
+    .kf .warn .txt, .kf .tracknote .txt { display: none; }
+  }
   .grow { flex: 1; }
   .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
   .btnrow button { flex: 1; }
   #total { color: var(--text-muted, #93a0bb); font-size: 11px; margin-top: 6px; text-align: right; font-variant-numeric: tabular-nums; }
   #empty { color: var(--text-dim, #5d6a85); text-align: center; padding: 14px 6px; font-size: 12px; }
+
+  /* ---- Help / setup guide modal ---- */
+  #helpOverlay {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    background: rgba(0,0,0,.55); align-items: center; justify-content: center; padding: 18px;
+  }
+  #helpOverlay.show { display: flex; }
+  #helpModal {
+    background: var(--elevated, #1a2233); border: 1px solid var(--border-strong, #324059);
+    border-radius: 16px; max-width: 760px; width: 100%; max-height: 92vh;
+    display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.5);
+  }
+  #helpHead {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border, #232c3d); flex-shrink: 0;
+  }
+  #helpHead h2 {
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-primary, #e2e6f4); margin: 0;
+  }
+  #helpBody { overflow: auto; padding: 16px 18px; font-size: 12.5px; line-height: 1.55; }
+  #helpBody h3 {
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent, #f0a030); margin: 20px 0 6px;
+  }
+  #helpBody h3:first-child { margin-top: 0; }
+  #helpBody p { margin: 0 0 8px; color: var(--text-muted, #93a0bb); }
+  #helpBody ul { margin: 0 0 8px 18px; padding: 0; color: var(--text-muted, #93a0bb); }
+  #helpBody li { margin-bottom: 4px; }
+  #helpBody strong { color: var(--text-primary, #e2e6f4); }
+  #helpBody code {
+    background: var(--bg, #0c1018); border: 1px solid var(--border, #232c3d);
+    border-radius: 5px; padding: 1px 5px; font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace;
+    color: var(--text-primary, #e2e6f4);
+  }
+  #helpBody pre {
+    background: var(--bg, #0c1018); border: 1px solid var(--border, #232c3d);
+    border-radius: 10px; padding: 12px; margin: 0 0 10px; overflow-x: auto;
+    font-size: 11.5px; line-height: 1.55; color: var(--text-primary, #e2e6f4);
+    font-family: ui-monospace, SFMono-Regular, Consolas, Menlo, monospace;
+  }
+  #helpBody pre .c { color: var(--text-dim, #5d6a85); font-style: italic; }   /* YAML comments */
+  #helpBody pre .k { color: var(--teal, #2dd4bf); }                            /* YAML keys */
 
   @media (max-width: 760px) {
     #app { flex-direction: column; }
@@ -325,13 +371,14 @@
     #panel { width: 100% !important; max-width: none; min-width: 0; flex: 1; border-left: none; border-top: 1px solid var(--border, #232c3d); }
     #panelResize { display: none; }
     .auxMap .grid { grid-template-columns: minmax(120px, 1fr) minmax(92px, 120px); }
+    #helpOverlay { padding: 8px; }
+    #helpModal { max-height: 96vh; }
   }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="stage">
-    <canvas id="cv"></canvas>
     <div id="threeContainer"></div>
     <div class="hud">
       <div class="chip x"><div class="lbl">X · Slide</div><div class="val" id="vX">0.00</div><div class="sub" id="mX">mach 0.00</div></div>
@@ -339,7 +386,7 @@
       <div class="chip z"><div class="lbl">Z · Tilt</div><div class="val" id="vZ">0.00</div><div class="sub" id="mZ">mach 0.00</div></div>
       <div id="auxHud"></div>
     </div>
-    <div id="statusRow"><button id="viewToggle" title="Switch to the rendered scene view">Render</button><div id="stateChip">—</div></div>
+    <div id="statusRow"><div id="stateChip">—</div></div>
     <div id="banner"></div>
     <div id="auxControls"></div>
     <div id="hint">drag carriage / pan knob / camera · empty space orbits · scroll zooms</div>
@@ -356,7 +403,7 @@
       <div class="sec-body">
       <div class="row">
         <label>Live jog while dragging</label>
-        <button type="button" class="toggle" id="liveToggle" aria-pressed="false" aria-label="Live jog while dragging"></button>
+        <button type="button" class="toggle" id="liveToggle" role="switch" aria-checked="false" aria-label="Live jog while dragging"></button>
       </div>
       <div class="row">
         <label>Max jog feed (mm/min)</label>
@@ -367,8 +414,8 @@
         <button id="syncFromMach">Pull from machine</button>
       </div>
       <div class="row" style="margin-top:8px">
-        <label>Joysticks &amp; keys<button type="button" class="info" data-tip="Left joystick / A·D keys = X slide. Right joystick / arrow keys = Pan (left/right) and Tilt (up/down). Joysticks and keyboard work together, and both work in the wireframe and rendered views.">i</button></label>
-        <button type="button" class="toggle" id="joystickToggle" aria-pressed="false" aria-label="Joysticks and keys"></button>
+        <label>Joysticks &amp; keys<button type="button" class="info" data-tip="Left joystick / A·D keys = X slide. Right joystick / arrow keys = Pan (left/right) and Tilt (up/down). Joysticks and keyboard work together.">i</button></label>
+        <button type="button" class="toggle" id="joystickToggle" role="switch" aria-checked="false" aria-label="Joysticks and keys"></button>
       </div>
       <div id="joySpeedControls" style="display:none">
         <div class="row" style="margin-top:8px"><label class="subhead">Joystick &amp; hotkey speed</label></div>
@@ -475,13 +522,13 @@
       <div class="row"><label>Sensor size (mm)<button type="button" class="info" data-tip="Focal length, frustum frame size, and focus min/max/infinity are configured under whichever axis is set to Zoom lens / Focus range, in the Aux Axis Mapping cards below.">i</button></label><input type="number" id="sensorWidth" value="36" min="1" step="1"><input type="number" id="sensorHeight" value="24" min="1" step="1"></div>
       <div class="row">
         <label>Infinity past max<button type="button" class="info" data-tip="Visual only — the rendered frustum keeps focusing past the configured max, but the real motor still stops at its max position.">i</button></label>
-        <button type="button" class="toggle on" id="infinityToggle" aria-pressed="true" aria-label="Infinity past max"></button>
+        <button type="button" class="toggle on" id="infinityToggle" role="switch" aria-checked="true" aria-label="Infinity past max"></button>
       </div>
       <div id="auxAxisList"></div>
       </div>
     </div>
 
-    <div class="setup-group" id="colourSetupSec" style="display:none">
+    <div class="setup-group" id="colourSetupSec">
       <h3>Colour setup</h3>
       <div class="sec-body">
       <div class="row"><label class="subhead">Quick schemes</label></div>
@@ -515,10 +562,156 @@
       </div>
     </div>
 
+    <div class="btnrow">
+      <button id="helpSetup">Help setting up</button>
+    </div>
+
     <details id="machineSettingsLog">
       <summary id="machineLogSummary">Machine settings log</summary>
       <pre id="machineLogBody">Waiting for machine settings...</pre>
     </details>
+  </div>
+</div>
+
+<div id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div id="helpModal">
+    <div id="helpHead">
+      <h2 id="helpTitle">Setting up Motion Slider</h2>
+      <button type="button" class="icon" id="helpClose" aria-label="Close help">✕</button>
+    </div>
+    <div id="helpBody">
+      <h3>What this app does</h3>
+      <p>Motion Slider drives a camera motion rig running <strong>FluidNC</strong> with plain cartesian kinematics:</p>
+      <ul>
+        <li><strong>X</strong> — slide rail position, in real millimetres.</li>
+        <li><strong>Y</strong> — pan head, in degrees (driven as a linear axis).</li>
+        <li><strong>Z</strong> — tilt head, in degrees (driven as a linear axis).</li>
+        <li><strong>A / B / C</strong> (optional) — map to follow-focus, zoom, a rotary table, or a linear rail in the <strong>Aux Axis Mapping</strong> cards.</li>
+      </ul>
+      <ul>
+        <li><strong>Drag the virtual rig</strong> — carriage = slide, teal knob = pan, camera body = tilt. Empty space orbits the view, scroll/pinch zooms.</li>
+        <li><strong>Capture keyframes</strong> from the virtual pose or the real machine pose. Each keyframe has a time in ms; the app computes the exact feed so the move takes precisely that long. Identical poses become dwells.</li>
+        <li><strong>Run / Hold / Resume</strong> the sequence live, or <strong>Save G-code</strong> to <code>/sd/motion_slider.nc</code> and run it as a normal job.</li>
+        <li><strong>Focus objects</strong> — place targets in the scene and keyframes can auto-track them with pan/tilt (and focus, if mapped).</li>
+        <li><strong>Joysticks &amp; keys</strong> — on-screen joysticks plus A/D (slide) and arrow keys (pan/tilt).</li>
+      </ul>
+
+      <h3>Live vs. offline control</h3>
+      <p><strong>Live jog while dragging</strong> is <strong>OFF each time the app starts</strong> — this is a safety default. While it is off you are working offline: drag the rig, build and preview keyframes, nothing moves. Turn it on and the real machine follows your drags with streamed jog commands; the <strong>green ghost rig</strong> shows where the physical machine actually is, and the HUD shows both virtual and machine values.</p>
+      <p>You can plan a whole sequence with no machine connected at all, then connect, home, and run it later.</p>
+
+      <h3>The 3D scene view</h3>
+      <p>The viewport is a full 3D scene — lighting, shadows, camera frustum, and a colour setup panel. Three.js ships inside the plugin, so it <strong>works fully offline</strong>, including on AP-mode controllers with no internet. Drag directly on the rig, orbit with empty space, and scroll/pinch to zoom.</p>
+
+      <h3>Machine position (MPos), home and negative travel</h3>
+      <p>FluidNC reports <strong>MPos</strong> — machine position — relative to wherever <code>mpos_mm</code> puts zero after homing. The most common setup homes the axis to one end and calls that end <strong>0</strong>. All movement away from home then counts <strong>negative</strong>: a 450&nbsp;mm rail homed with <code>positive_direction: true</code> and <code>mpos_mm: 0</code> works between <strong>MPos 0 (at home) and MPos −450</strong> (far end, beyond home in the negative direction).</p>
+      <p>This app works in machine coordinates, so tell it that range in <strong>Axis setup</strong>: set <strong>X start</strong> to <code>-450</code> and <strong>travel</strong> to <code>450</code>. (When the app can read your machine's settings it fills these in automatically and locks the inputs.) If you instead home to the other end so MPos runs 0 → +450, X start is simply <code>0</code>.</p>
+      <p>The same idea applies to pan/tilt: their min/max are MPos values in degrees. In the sample below, both home to a switch 20° below zero (<code>mpos_mm: -20</code>), so their MPos ranges run from a negative value up through positive — pan −20 → +160, tilt −20 → +70.</p>
+
+      <h3>Sample FluidNC config (annotated)</h3>
+      <p>A minimal <code>config.yaml</code> for a slider with pan and tilt. Pin numbers are examples — use your board's actual wiring. Note that FluidNC's parser only accepts <code>#</code> comments on their <strong>own line</strong>, never after a value — the sample below follows that rule.</p>
+      <pre><span class="k">name</span>: "Camera Slider"
+<span class="k">board</span>: ESP32
+
+<span class="c"># Plain 1:1 axis mapping — what this app expects.</span>
+<span class="k">kinematics</span>:
+  <span class="k">Cartesian</span>:
+
+<span class="k">axes</span>:
+  <span class="c"># SLIDE rail — real millimetres.</span>
+  <span class="k">x</span>:
+    <span class="c"># Motor steps per mm of carriage travel.</span>
+    <span class="k">steps_per_mm</span>: 80.000
+    <span class="c"># Fastest the app is allowed to move X.</span>
+    <span class="k">max_rate_mm_per_min</span>: 3000.000
+    <span class="k">acceleration_mm_per_sec2</span>: 100.000
+    <span class="c"># Usable rail length — the app reads this ($130).</span>
+    <span class="k">max_travel_mm</span>: 450.000
+    <span class="c"># Firmware blocks moves outside the travel range.</span>
+    <span class="k">soft_limits</span>: true
+    <span class="k">homing</span>:
+      <span class="k">cycle</span>: 1
+      <span class="c"># Homes TOWARD the switch at the + end, and mpos_mm calls that</span>
+      <span class="c"># spot MPos 0. All travel is then NEGATIVE, beyond home:</span>
+      <span class="c"># MPos 0 → −450. In the app: X start = −450, travel = 450.</span>
+      <span class="c"># (Home at the − end instead? Then MPos runs 0 → +450 and</span>
+      <span class="c"># X start = 0.)</span>
+      <span class="k">positive_direction</span>: true
+      <span class="k">mpos_mm</span>: 0.000
+      <span class="k">feed_mm_per_min</span>: 500.000
+      <span class="k">seek_mm_per_min</span>: 1500.000
+    <span class="k">motor0</span>:
+      <span class="k">limit_neg_pin</span>: NO_PIN
+      <span class="c"># Home/limit switch at the + end.</span>
+      <span class="k">limit_pos_pin</span>: gpio.34
+      <span class="k">stepstick</span>:
+        <span class="k">step_pin</span>: gpio.12
+        <span class="k">direction_pin</span>: gpio.14
+
+  <span class="c"># PAN head — DEGREES driven as if they were mm.</span>
+  <span class="k">y</span>:
+    <span class="c"># Motor steps per DEGREE of pan.</span>
+    <span class="k">steps_per_mm</span>: 26.667
+    <span class="c"># Degrees per minute.</span>
+    <span class="k">max_rate_mm_per_min</span>: 4000.000
+    <span class="k">acceleration_mm_per_sec2</span>: 200.000
+    <span class="c"># Pan range in degrees ($131).</span>
+    <span class="k">max_travel_mm</span>: 180.000
+    <span class="k">soft_limits</span>: true
+    <span class="k">homing</span>:
+      <span class="k">cycle</span>: 2
+      <span class="c"># Homes to the − end, and mpos_mm calls the switch position −20°.</span>
+      <span class="c"># MPos then runs −20 → +160 (still 180° of travel): negative</span>
+      <span class="c"># below zero, positive above it.</span>
+      <span class="c"># In the app: Pan min = −20, Pan max = 160.</span>
+      <span class="k">positive_direction</span>: false
+      <span class="k">mpos_mm</span>: -20.000
+    <span class="k">motor0</span>:
+      <span class="k">limit_neg_pin</span>: gpio.35
+      <span class="k">stepstick</span>:
+        <span class="k">step_pin</span>: gpio.26
+        <span class="k">direction_pin</span>: gpio.15
+
+  <span class="c"># TILT head — degrees, same idea as pan.</span>
+  <span class="k">z</span>:
+    <span class="k">steps_per_mm</span>: 53.333
+    <span class="k">max_rate_mm_per_min</span>: 3000.000
+    <span class="k">acceleration_mm_per_sec2</span>: 150.000
+    <span class="c"># Tilt range in degrees ($132).</span>
+    <span class="k">max_travel_mm</span>: 90.000
+    <span class="k">soft_limits</span>: true
+    <span class="k">homing</span>:
+      <span class="k">cycle</span>: 2
+      <span class="c"># Switch sits 20° below level: MPos runs −20 → +70.</span>
+      <span class="c"># In the app: Tilt min = −20, Tilt max = 70.</span>
+      <span class="k">positive_direction</span>: false
+      <span class="k">mpos_mm</span>: -20.000
+    <span class="k">motor0</span>:
+      <span class="k">limit_neg_pin</span>: gpio.32
+      <span class="k">stepstick</span>:
+        <span class="k">step_pin</span>: gpio.27
+        <span class="k">direction_pin</span>: gpio.33
+
+  <span class="c"># OPTIONAL — e.g. a follow-focus motor. Map it under "Aux Axis</span>
+  <span class="c"># Mapping" in the app (focus / zoom / rotary table / linear rail).</span>
+  <span class="k">a</span>:
+    <span class="k">steps_per_mm</span>: 100.000
+    <span class="k">max_rate_mm_per_min</span>: 2000.000
+    <span class="k">acceleration_mm_per_sec2</span>: 100.000
+    <span class="k">max_travel_mm</span>: 300.000
+    <span class="k">motor0</span>:
+      <span class="k">stepstick</span>:
+        <span class="k">step_pin</span>: gpio.25
+        <span class="k">direction_pin</span>: gpio.4</pre>
+
+      <h3>Checklist</h3>
+      <ul>
+        <li>Home the machine first — MPos is only meaningful after homing.</li>
+        <li>If the app reads your settings (<code>$$</code> / <code>$SS</code> / config file), the Axis setup inputs fill in and lock automatically; otherwise enter X start / travel and pan/tilt min/max by hand to match your YAML.</li>
+        <li>Keep <code>soft_limits: true</code> so a typo in a keyframe can't run the rig off its rail.</li>
+        <li>Flip <strong>Live jog while dragging</strong> on only when you're ready for the physical rig to follow.</li>
+      </ul>
+    </div>
   </div>
 </div>
 
@@ -542,13 +735,51 @@ window.addEventListener('message', e => {
     if (p) { delete pending[d.id]; d.error ? p.reject(new Error(d.error)) : p.resolve(d.result); }
   }
   if (d.type === 'fluid-event' && d.event === 'status') onStatus(d.data);
+  if (d.type === 'fluid-event' && d.event === 'line') onCtrlLine(d.data);
 });
+
+/* ---- controller ok/error acknowledgements (sequence-run flow control) ----
+   Commands go over the fast WebSocket path (sendCommand → sendRaw); the
+   controller's replies stream back via the host's 'line' event. During a run
+   each G-code line waits for its 'ok' before the next is sent, so long
+   sequences can't be dumped into the transport buffers all at once. */
+let ackWaiters = [];   // FIFO — one entry per in-flight line awaiting ok/error
+function onCtrlLine(line) {
+  const s = String(line ?? '').trim();
+  if (!ackWaiters.length) return;
+  // Status reports (<...>) and info messages are not acks — ignore them.
+  if (s === 'ok') {
+    const w = ackWaiters.shift(); clearTimeout(w.timer); w.resolve();
+  } else if (/^(error(\b|:)|ALARM:)/i.test(s)) {
+    const w = ackWaiters.shift(); clearTimeout(w.timer); w.reject(new Error(s));
+  }
+}
+// Send one line and wait for the controller's ok/error. On ack timeout it
+// RESOLVES (degrades to fire-and-forget pacing) instead of failing the whole
+// run — 'ok' can legitimately take as long as one buffered move when the
+// planner queue is full, and hosts without the line event would never ack.
+function sendAwaitOk(cmd, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    const w = { resolve, reject, timer: null };
+    w.timer = setTimeout(() => {
+      const i = ackWaiters.indexOf(w);
+      if (i >= 0) ackWaiters.splice(i, 1);
+      resolve();
+    }, timeoutMs);
+    ackWaiters.push(w);
+    send(cmd).catch(err => {
+      const i = ackWaiters.indexOf(w);
+      if (i >= 0) ackWaiters.splice(i, 1);
+      clearTimeout(w.timer);
+      reject(err);
+    });
+  });
+}
 
 /* ================= State ================= */
 // Cartesian kinematics: machine axes map 1:1 to rig DOF.
 // X = slide position (mm), Y = pan (deg, driven as linear axis), Z = tilt (deg).
 const virt = { x: 0, y: 0, z: 0 };          // virtual rig target
-const disp = { x: 0, y: 0, z: 0 };          // smoothed display values
 const mach = { x: 0, y: 0, z: 0, a: NaN, b: NaN, c: NaN, state: '—', known: false };
 const lim  = { xMin: 0, x: 450, panMin: 0, panMax: 180, tiltMin: 0, tiltMax: 90 };
 const maxRate = { x: undefined, y: undefined, z: undefined, a: undefined, b: undefined, c: undefined };
@@ -594,6 +825,8 @@ let auxAxes = {
 };
 let auxAxisAvailable = false;
 let keyframes = [];
+// Safety: live machine motion always starts DISARMED. The user must flip the
+// Live-jog switch each session — this is intentionally never persisted/restored.
 let liveJog = false;
 let activeKf = -1;
 let dragTarget = { ...virt };
@@ -617,13 +850,6 @@ let moveScale = 1;
 // $110/$111/$112 max rate) — joySpeedFor() must use the SAME cap, not the raw
 // machine maxRate, otherwise the on-screen position races ahead of whatever
 // feed actually gets sent to the machine via $J= (axisRate/cappedFeedForMove).
-function setToggleState(id, on) {
-  const el = $(id);
-  if (!el) return;
-  el.classList.toggle('on', !!on);
-  el.setAttribute('aria-pressed', String(!!on));
-}
-
 function joySpeedFor(axis) {
   return (axisRate(axis) / 60) * moveScale;
 }
@@ -703,6 +929,13 @@ let panelCollapsed = { setup: true };
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
 const $ = id => document.getElementById(id);
+// Switch-style toggle buttons: keep the visual .on class and the
+// aria-checked state (role="switch") in lockstep.
+const setToggleState = (el, on) => {
+  if (!el) return;
+  el.classList.toggle('on', !!on);
+  el.setAttribute('aria-checked', on ? 'true' : 'false');
+};
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const fmt = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
 
@@ -1289,7 +1522,7 @@ function isTypingTarget(el) {
 
 function setJoystickEnabled(on) {
   joystickEnabled = !!on;
-  setToggleState('joystickToggle', joystickEnabled);
+  setToggleState($('joystickToggle'), joystickEnabled);
   $('joyLayer')?.classList.toggle('on', joystickEnabled);
   const speedControls = $('joySpeedControls');
   if (speedControls) speedControls.style.display = joystickEnabled ? '' : 'none';
@@ -1310,6 +1543,7 @@ function updateHotkeyState() {
 const HOTKEY_SET = new Set(['a', 'd', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown']);
 window.addEventListener('keydown', e => {
   if (!joystickEnabled || isTypingTarget(document.activeElement)) return;
+  if ($('helpOverlay')?.classList.contains('show')) return; // no jogging while reading help
   const k = e.key.toLowerCase();
   if (!HOTKEY_SET.has(k)) return;
   e.preventDefault();
@@ -1329,13 +1563,12 @@ function ensureJoyLoop() {
   requestAnimationFrame(joyLoop);
 }
 
-// Default orbit azimuth for each view, captured from the camera's initial position
-// (2D: cam.yaw = -0.85 at init; 3D: t3Cam starts at roughly +0.3rl,+1.45rl from the
-// target). If the user has orbited more than 90° away from that, they're looking at
-// the rig from "the other side" — screen-left/right and the rig's +X/+pan no longer
-// agree, so the X-slide and pan hotkey/joystick directions get mirrored to match
-// what's visually left/right on screen instead of staying machine-axis-relative.
-const CAM2D_DEFAULT_YAW = -0.85;
+// Default orbit azimuth, captured from the camera's initial position (t3Cam
+// starts at roughly +0.3rl,+1.45rl from the target). If the user has orbited
+// more than 90° away from that, they're looking at the rig from "the other
+// side" — screen-left/right and the rig's +X/+pan no longer agree, so the
+// X-slide and pan hotkey/joystick directions get mirrored to match what's
+// visually left/right on screen instead of staying machine-axis-relative.
 const T3_DEFAULT_AZIMUTH = Math.atan2(0.3, 1.45);
 function angDiff(a, b) {
   let d = a - b;
@@ -1344,14 +1577,11 @@ function angDiff(a, b) {
   return d;
 }
 function isViewFlipped() {
-  if (t3Active) {
-    if (!t3Cam || !t3Orbit) return false;
-    const dx = t3Cam.position.x - t3Orbit.target.x;
-    const dz = t3Cam.position.z - t3Orbit.target.z;
-    if (Math.hypot(dx, dz) < 1e-3) return false;
-    return Math.abs(angDiff(Math.atan2(dx, dz), T3_DEFAULT_AZIMUTH)) > Math.PI / 2;
-  }
-  return Math.abs(angDiff(cam.yaw, CAM2D_DEFAULT_YAW)) > Math.PI / 2;
+  if (!t3Cam || !t3Orbit) return false;
+  const dx = t3Cam.position.x - t3Orbit.target.x;
+  const dz = t3Cam.position.z - t3Orbit.target.z;
+  if (Math.hypot(dx, dz) < 1e-3) return false;
+  return Math.abs(angDiff(Math.atan2(dx, dz), T3_DEFAULT_AZIMUTH)) > Math.PI / 2;
 }
 
 function joyLoop(now) {
@@ -1520,10 +1750,9 @@ function onStatus(s) {
   //     DRO/handle don't sit at a stale default before any interaction), and
   //   - continuously during isRunning sequence playback, same as virt, so the
   //     handle — not just the ghost — tracks physical playback in 3D.
-  // Skips while user holds +/- or is dragging — either the 2D canvas drag
-  // (drag.kind === 'auxRotary'/'auxLinear') or the 3D rotary-table/linear-rail
-  // gizmo drag (t3AuxDragState) — setAuxValue owns the value then.
-  const notAuxDragging = !auxHold && !(drag?.kind?.startsWith('aux')) && !t3AuxDragState;
+  // Skips while user holds +/- or is dragging the rotary-table/linear-rail
+  // gizmo (t3AuxDragState) — setAuxValue owns the value then.
+  const notAuxDragging = !auxHold && !t3AuxDragState;
   if (p && notAuxDragging) {
     for (const [axis, key] of [['A', 'a'], ['B', 'b'], ['C', 'c']]) {
       if (auxAxisAvailable && Number.isFinite(mach[key]) && auxAxes[axis]?.role !== 'off') {
@@ -1555,7 +1784,7 @@ function isHandleDrag() {
   // and A/D + arrow-key jogging — without these, live mode kept syncing virt ←
   // mach every status tick while one of these was actively driving movement, so
   // the carriage/pan/tilt visibly snapped back to the physical DRO position mid-move.
-  return (!!drag && (drag.kind === 'carriage' || drag.kind === 'pan' || drag.kind === 'tilt')) || !!t3DragState || joyLoopOn;
+  return !!t3DragState || joyLoopOn;
 }
 
 function banner(msg) {
@@ -1589,6 +1818,7 @@ let jogDirty = false;         // latest target differs from what was last sent
 let lastSent = { x: NaN, y: NaN, z: NaN };
 let lastSentJogWords = '';
 let jogInFlight = false;      // avoid stacking HTTP /command requests while dragging
+let jogFailStreak = 0;        // consecutive failed $J= sends — caps automatic retries
 let lastSendAt = 0;           // performance.now() of the last $J= actually sent
 let lastJogDir = { x: 0, y: 0, z: 0 }; // sign of the last commanded delta per axis, for reversal detection
 
@@ -1648,16 +1878,23 @@ function flushJog() {
   jogInFlight = true;
   lastSendAt = now;
   send(`$J=G53 G90 G21 ${words} F${fmt(f, 1)}`)
+    .then(() => { jogFailStreak = 0; })
     .catch(() => {
-      if (lastSentJogWords === words) {
-        lastSent = { x: NaN, y: NaN, z: NaN };
-        lastSentJogWords = '';
-      }
+      // The target never reached the controller — forget the "sent" markers
+      // so the same words aren't skipped as duplicates, and re-mark dirty so
+      // the finally-flush (or the next pump tick) retries it.
+      jogFailStreak++;
+      lastSent = { x: NaN, y: NaN, z: NaN };
+      lastSentJogWords = '';
       jogDirty = true;
     })
     .finally(() => {
       jogInFlight = false;
-      if (jogDirty) flushJog();
+      // If the drag ended while this request was in flight, the RAF pump has
+      // stopped and nothing else will flush the final target — do it here.
+      // Capped after repeated failures so a dead connection doesn't retry
+      // (and banner) forever; the next drag resumes flushing as usual.
+      if (jogDirty && jogFailStreak < 3) flushJog();
     });
 }
 
@@ -1692,97 +1929,17 @@ function stopJogPumpSoon() {
   }, JOG_THROTTLE_MS + 80);
 }
 
-/* ================= 3D engine ================= */
-const cv = $('cv'), ctx = cv.getContext('2d');
-let W = 0, H = 0, DPR = 1;
-function resize() {
-  DPR = window.devicePixelRatio || 1;
-  let w = cv.clientWidth, h = cv.clientHeight;
-  // Fallbacks: some embeds report 0 on first layout pass.
-  if (!w || !h) {
-    const st = $('stage');
-    w = w || st.clientWidth || window.innerWidth || 800;
-    h = h || st.clientHeight || Math.round((window.innerHeight || 600) * 0.55) || 450;
-  }
-  W = w; H = h;
-  cv.width = Math.max(1, Math.round(W * DPR));
-  cv.height = Math.max(1, Math.round(H * DPR));
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  if (t3Active) t3HandleResize();
-}
-new ResizeObserver(resize).observe(cv);
-new ResizeObserver(resize).observe($('stage'));
-window.addEventListener('resize', resize);
-
-const cam = { yaw: -0.85, pitch: 0.42, dist: 950, tx: 225, ty: 90, tz: 0 };
-let camBasis = null;
-function computeCam() {
-  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
-  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-  const C = [cam.tx + cam.dist * cp * sy, cam.ty + cam.dist * sp, cam.tz + cam.dist * cp * cy];
-  const f = norm([cam.tx - C[0], cam.ty - C[1], cam.tz - C[2]]);
-  const r = norm(cross(f, [0, 1, 0]));
-  const u = cross(r, f);
-  camBasis = { C, f, r, u, fl: H * 1.15 };
-}
-function frameLensHeight() {
-  const h = lensWorldHeight();
-  if (!Number.isFinite(h) || h <= 0) return;
-  cam.ty = Math.max(90, h * 0.45);
-  cam.dist = clamp(Math.max(cam.dist, h * 1.25), 200, 4000);
-}
-// Frames the whole rail + rig in the 2D canvas with a fixed pixel margin on
-// every side, so the user always sees the full slider on open rather than a
-// stale/default zoom that may crop it (very long or very short rails).
-function fitSliderView() {
-  if (!W || !H) return;
-  const xMin = -RAIL_OVERHANG, xMax = (lim.x || 600) + RAIL_OVERHANG;
-  const yMax = Math.max(CARR_TOP + DISC_H + YOKE_H + 80, lensWorldHeight() + 80);
-  const zHalf = 70;
-  const corners = [];
-  for (const x of [xMin, xMax]) for (const y of [0, yMax]) for (const z of [-zHalf, zHalf]) corners.push([x, y, z]);
-  cam.tx = (xMin + xMax) / 2;
-  cam.tz = 0;
-  cam.ty = yMax / 2;
-  const pad = 20;
-  for (let i = 0; i < 6; i++) {
-    computeCam();
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, ok = true;
-    for (const c of corners) {
-      const p = project(c);
-      if (!p) { ok = false; break; }
-      minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
-      minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
-    }
-    if (!ok) { cam.dist = clamp(cam.dist * 1.5, 200, 8000); continue; }
-    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
-    const scale = Math.min((W - pad * 2) / spanX, (H - pad * 2) / spanY);
-    if (scale > 0.97 && scale < 1.03) break;
-    cam.dist = clamp(cam.dist / scale, 150, 8000);
-  }
-  computeCam();
-}
+/* ================= 3D vector helpers ================= */
+// The rig rail is drawn RAIL_OVERHANG mm longer than the travel at each end.
+const RAIL_OVERHANG = 100;
+// Rig proportions (mm): carriage top face height, pan-disc thickness, yoke
+// height — used to compute the scene-framing bounding box.
+const CARR_TOP = 56, DISC_H = 10, YOKE_H = 58;
 const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
 const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
 const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
 function norm(v) { const l = Math.hypot(v[0],v[1],v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; }
 
-function project(p) {
-  const { C, f, r, u, fl } = camBasis;
-  const v = sub(p, C);
-  const z = dot(v, f);
-  if (z < 5) return null;
-  return [W/2 + dot(v, r) * fl / z, H/2 - dot(v, u) * fl / z, z];
-}
-function screenRay(px, py) {
-  const { C, f, r, u, fl } = camBasis;
-  const d = norm([
-    f[0] + r[0]*(px - W/2)/fl + u[0]*(H/2 - py)/fl,
-    f[1] + r[1]*(px - W/2)/fl + u[1]*(H/2 - py)/fl,
-    f[2] + r[2]*(px - W/2)/fl + u[2]*(H/2 - py)/fl,
-  ]);
-  return { o: C, d };
-}
 function rayPlane(ray, p0, n) {
   const dn = dot(ray.d, n);
   if (Math.abs(dn) < 1e-6) return null;
@@ -1817,787 +1974,17 @@ function getTheme() {
   }
   return theme;
 }
-function shade(color, k) { // '#rrggbb' scaled by k; non-hex passes through
-  if (!color || color[0] !== '#' || color.length < 7) return color || '#888';
-  const n = parseInt(color.slice(1, 7), 16);
-  const r = clamp(Math.round(((n >> 16) & 255) * k), 0, 255);
-  const g = clamp(Math.round(((n >> 8) & 255) * k), 0, 255);
-  const b = clamp(Math.round((n & 255) * k), 0, 255);
-  return `rgb(${r},${g},${b})`;
-}
-
-/* geometry helpers */
-const LIGHT = norm([0.5, 0.85, 0.35]);
-function rotY(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c + p[2]*s, p[1], -p[0]*s + p[2]*c]; }
-function rotZ(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2]]; }
-
-function addBox(out, tf, cx, cy, cz, sx, sy, sz, color, alpha) {
-  const h = [sx/2, sy/2, sz/2];
-  const v = [];
-  for (let i = 0; i < 8; i++)
-    v.push(tf([cx + (i&1 ? h[0] : -h[0]), cy + (i&2 ? h[1] : -h[1]), cz + (i&4 ? h[2] : -h[2])]));
-  const faces = [[0,1,3,2],[4,6,7,5],[0,2,6,4],[1,5,7,3],[0,4,5,1],[2,3,7,6]];
-  for (const f of faces) addQuad(out, [v[f[0]], v[f[1]], v[f[2]], v[f[3]]], color, alpha);
-}
-function addQuad(out, w, color, alpha) {
-  const n = norm(cross(sub(w[1], w[0]), sub(w[2], w[0])));
-  const center = [(w[0][0]+w[2][0])/2, (w[0][1]+w[2][1])/2, (w[0][2]+w[2][2])/2];
-  if (dot(n, sub(camBasis.C, center)) <= 0) return; // backface
-  const pts = [];
-  let depth = 0;
-  for (const p of w) { const s = project(p); if (!s) return; pts.push(s); depth += s[2]; }
-  const lum = 0.5 + 0.5 * Math.max(0, dot(n, LIGHT));
-  out.push({ pts, depth: depth / w.length, fill: shade(color, lum), alpha: alpha ?? 1 });
-}
-function addDisc(out, tf, cy, r, h, segs, color, alpha) {
-  const top = [], bot = [];
-  for (let i = 0; i < segs; i++) {
-    const a = i / segs * Math.PI * 2;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    top.push(tf([x, cy + h/2, z])); bot.push(tf([x, cy - h/2, z]));
-  }
-  for (let i = 0; i < segs; i++) {
-    const j = (i + 1) % segs;
-    addQuad(out, [bot[i], bot[j], top[j], top[i]], color, alpha);
-  }
-  // top cap as polygon:
-  const pts = []; let depth = 0; let ok = true;
-  for (const p of top) { const s = project(p); if (!s) { ok = false; break; } pts.push(s); depth += s[2]; }
-  if (ok) out.push({ pts, depth: depth / segs - 0.5, fill: shade(color, 0.95), alpha: alpha ?? 1 });
-}
-
-/* rig geometry — returns prims + world-space handle points */
-const RAIL_Y = 42, CARR_TOP = 56, DISC_H = 10, YOKE_H = 58;
-// Real linear rails extend past the carriage's actual travel on both ends so
-// it never hangs off the rail at min/max X — shared by the 2D and 3D rigs.
-const RAIL_OVERHANG = 100;
-function buildRig(out, pos, alpha, ghost = false) {
-  const t = getTheme();
-  const id = p => p;
-  const L = lim.x;
-  const panA = pos.y * Math.PI / 180;
-  const tiltA = pos.z * Math.PI / 180;
-
-  if (!ghost) {
-    // end blocks + rails + feet — rail bars run RAIL_OVERHANG past each end of
-    // the actual travel (L), so the carriage stays fully supported at min/max
-    // X instead of hanging half off the rail the way a flush-length rail would.
-    for (const ex of [-RAIL_OVERHANG - 7, L + RAIL_OVERHANG + 7]) {
-      addBox(out, id, ex, 34, 0, 34, 58, 92, '#46506a', alpha);
-      addBox(out, id, ex, 4, 0, 44, 8, 110, '#39415a', alpha);
-    }
-    for (const rz of [-26, 26])
-      addBox(out, id, L/2, RAIL_Y, rz, L + RAIL_OVERHANG * 2, 7, 7, '#8a93ad', alpha);
-  }
-
-  // carriage
-  const cTf = p => [p[0] + pos.x, p[1], p[2]];
-  addBox(out, cTf, 0, 47, 0, 92, 18, 72, ghost ? t.ok : '#c8cede', alpha);
-  // pan disc (rotates)
-  const pTf = p => { const q = rotY(p, panA); return [q[0] + pos.x, q[1], q[2]]; };
-  addDisc(out, pTf, CARR_TOP + DISC_H/2 + 1, 30, DISC_H, 18, ghost ? t.ok : '#2dd4bf', alpha);
-  // pan grab tab
-  addBox(out, pTf, 62, CARR_TOP + DISC_H/2 + 1, 0, 28, 10, 16, ghost ? t.ok : '#1da391', alpha);
-  // yoke/mast uprights. The lens is drawn at cameraHeight so object tracking
-  // and the visual camera share the same world-space height reference.
-  const pivotY = lensWorldHeight();
-  const yokeBaseY = CARR_TOP + DISC_H;
-  const yokeH = Math.max(18, pivotY - yokeBaseY);
-  for (const yz of [-26, 26])
-    addBox(out, pTf, 0, yokeBaseY + yokeH/2, yz, 10, yokeH, 9, ghost ? t.ok : '#9aa3bd', alpha);
-  // camera body on tilt axis — camTf rotates every point about its own local
-  // origin (0,0,0), which is therefore the true rigid tilt pivot. Body/lens/
-  // ring coordinates below are offset from that origin so the BODY (the
-  // camera "sensor") sits centred ON the pivot — not 6-40mm forward of it the
-  // way the lens used to — so tilt swings the lens around the sensor instead
-  // of swinging the sensor around a point out past the lens.
-  const camTf = p => {
-    let q = rotZ(p, tiltA);
-    q = [q[0], q[1] + pivotY, q[2]];
-    q = rotY(q, panA);
-    return [q[0] + pos.x, q[1], q[2]];
-  };
-  addBox(out, camTf, 0, 0, 0, 56, 38, 40, ghost ? t.ok : '#3b4866', alpha);          // body — centred on the pivot
-  addBox(out, camTf, 40, 0, 0, 26, 26, 26, ghost ? t.ok : '#26304a', alpha);          // lens
-  addBox(out, camTf, 44, 0, 0, 6, 30, 30, ghost ? t.ok : (t.accent?.startsWith?.('#') ? t.accent : '#f0a030'), alpha); // lens ring
-
-  // world handle points
-  return {
-    carriage: [pos.x, 47, 0],
-    carriageLeft:  [pos.x - 46, 47, 0],   // carriage block extents for bbox hit
-    carriageRight: [pos.x + 46, 47, 0],
-    pan: pTf([78, CARR_TOP + DISC_H/2 + 1, 0]),
-    panDiscCenter: [pos.x, CARR_TOP + DISC_H/2 + 1, 0], // ring centre (invariant to panA)
-    tilt: camTf([58, 0, 0]),
-    pivot: [pos.x, pivotY, 0],             // tilt pivot — sensor / camera-body centre, not the lens
-    panDir: [Math.cos(panA), 0, -Math.sin(panA)],
-    yokeAxis: rotY([0, 0, 1], panA),
-    lens:   camTf([40, 0, 0]),             // approximate lens front centre
-    camFwd: camTf([3000, 0, 0]),           // point 3 m ahead in camera's look direction
-  };
-}
-
-function drawLensFrustum(hp) {
-  if (!hp || !hp.pivot || !hp.camFwd) return;
-  syncLensFromAux();
-  // Origin is the sensor — the tilt pivot at the centre of the camera body —
-  // not the lens tip, so the frustum starts where the image is actually formed.
-  const origin = hp.pivot;
-  // Frustum direction always follows the lens's actual orientation — it never
-  // bends toward the tracked object, so it stays visually glued to the camera
-  // model even while the user manually re-aims pan/tilt away from the target.
-  const fwd = norm(sub(hp.camFwd, hp.pivot));
-  const focusMin = Math.max(1, lensSettingNumber('focusMin', 50));
-  const focusMax = Math.max(focusMin + 1, lensSettingNumber('focusMax', 2500));
-  // Default (not tracking): the frame sits at focusMax — its apparent size
-  // there is already fully determined by sensor size and focal length (see
-  // corner() below, which implements the real lens FOV formula), so there's
-  // no separate "frustum size" setting needed. While tracking: the frame
-  // instead slides to the tracked object's actual distance. With "infinity"
-  // on, it keeps following the object past focusMax with no upper bound
-  // (purely visual — the real focus motor still parks at its max, see
-  // applyAutoFocus); with it off, the frame is pinned at focusMax once the
-  // object is farther than the lens can reach.
-  let maxD = focusMax;
-  let trackDist = null;
-  if (activeTrack >= 0 && focusObjects[activeTrack]) {
-    const t = computeTracking(virt.x);
-    if (t && Number.isFinite(t.focusDist)) {
-      trackDist = t.focusDist;
-      maxD = lensSettings.infinityEnabled !== false
-        ? Math.max(focusMin + 1, trackDist)
-        : clamp(trackDist, focusMin, focusMax);
-    }
-  }
-  let right = norm(cross(fwd, [0, 1, 0]));
-  if (!Number.isFinite(right[0])) right = [1, 0, 0];
-  const up = norm(cross(right, fwd));
-  const focal = Math.max(1, lensSettingNumber('focalLength', 50));
-  const sensorW = Math.max(1, lensSettingNumber('sensorWidth', 36));
-  const sensorH = Math.max(1, lensSettingNumber('sensorHeight', 24));
-  const minD = Math.min(focusMin, Math.max(1, maxD - 1));
-  function corner(dist, sx, sy) {
-    const halfW = (sensorW / (2 * focal)) * dist;
-    const halfH = (sensorH / (2 * focal)) * dist;
-    return [
-      origin[0] + fwd[0] * dist + right[0] * halfW * sx + up[0] * halfH * sy,
-      origin[1] + fwd[1] * dist + right[1] * halfW * sx + up[1] * halfH * sy,
-      origin[2] + fwd[2] * dist + right[2] * halfW * sx + up[2] * halfH * sy,
-    ];
-  }
-  const near = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx,sy]) => corner(minD, sx, sy));
-  const far = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx,sy]) => corner(maxD, sx, sy));
-  ctx.save();
-  ctx.strokeStyle = 'rgba(240,160,48,.72)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 5]);
-  polyline3(near, true);
-  ctx.setLineDash([]);
-  ctx.strokeStyle = 'rgba(240,160,48,.88)';
-  polyline3(far, true);
-  ctx.strokeStyle = 'rgba(240,160,48,.45)';
-  for (let i = 0; i < 4; i++) line3(origin, far[i]);
-  ctx.restore();
-
-  // Faint marker frame at the lens's real max-focus distance — only shown
-  // once "infinity" tracking has pushed the live frame past it, so the user
-  // can still see where the motor's actual focus limit is.
-  if (trackDist !== null && maxD > focusMax + 1) {
-    const infFar = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx,sy]) => corner(focusMax + 1, sx, sy));
-    ctx.save();
-    ctx.strokeStyle = 'rgba(240,160,48,.4)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 4]);
-    polyline3(infFar, true);
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  // Dotted tracking line — frustum-frame centre (where the lens is actually
-  // pointing) out to the tracked object, regardless of whether the lens is
-  // currently aimed at it.
-  if (activeTrack >= 0 && focusObjects[activeTrack]) {
-    const target = focusObjectWorld(focusObjects[activeTrack]);
-    const frameCenter = [origin[0] + fwd[0] * maxD, origin[1] + fwd[1] * maxD, origin[2] + fwd[2] * maxD];
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,64,64,.85)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 4]);
-    line3(frameCenter, target);
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-}
-
-function drawAuxGeometry() {
-  if (!auxAxisAvailable) return;
-  syncLensFromAux();
-  ctx.save();
-  const showGhost = !!(mach.known && !isRunning);
-  for (const axis of ['A', 'B', 'C']) {
-    const cfg = auxAxes[axis];
-    if (!cfg || cfg.role === 'off') continue;
-    const { cx, cz } = axisSceneBase(cfg);
-    const machVal = mach[axis.toLowerCase()];
-    if (cfg.role === 'rotary') {
-      const r = Math.max(1, +cfg.diameter || 300) / 2;
-      const pts = [];
-      for (let i = 0; i < 48; i++) {
-        const a = i / 48 * Math.PI * 2;
-        pts.push([cx + Math.cos(a) * r, 3, cz + Math.sin(a) * r]);
-      }
-      ctx.strokeStyle = 'rgba(45,212,191,.82)';
-      ctx.lineWidth = 2;
-      polyline3(pts, true);
-      // Ghost dot (pink, semi-transparent) follows the real MPos, same
-      // treatment as the main carriage ghost — the live teal dot below
-      // tracks cfg.value (the draft target) and is never auto-synced from
-      // mach mid-drag, so it stays put where the user left it.
-      if (showGhost && Number.isFinite(machVal)) {
-        const gAng = (machVal + (+cfg.angleOffset || 0)) * Math.PI / 180;
-        const gDot = [cx + Math.cos(gAng) * r, 12, cz + Math.sin(gAng) * r];
-        const gsp = project(gDot);
-        if (gsp) {
-          ctx.globalAlpha = 0.55;
-          ctx.fillStyle = '#ffb3d9';
-          ctx.beginPath(); ctx.arc(gsp[0], gsp[1], 7, 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-      }
-      const ang = ((+cfg.value || 0) + (+cfg.angleOffset || 0)) * Math.PI / 180;
-      const dot = [cx + Math.cos(ang) * r, 12, cz + Math.sin(ang) * r];
-      line3([cx, 8, cz], dot);
-      const sp = project(dot);
-      if (sp) {
-        handles[`aux${axis}`] = { kind: 'auxRotary', axis, x: sp[0], y: sp[1], r: 16, cx, cz };
-        ctx.fillStyle = '#2dd4bf';
-        ctx.beginPath(); ctx.arc(sp[0], sp[1], 8, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-    if (cfg.role === 'linear') {
-      const ang = (+cfg.railAngle || 0) * Math.PI / 180;
-      const h = +cfg.railHeight || 0;
-      const val = +cfg.value || 0;
-      const dx = Math.cos(ang), dz = Math.sin(ang);
-      // Rail spans machine axis travel: min → max (from YAML/$$).
-      // Falls back to railLength if machine limits not yet loaded.
-      const rMin = +cfg.min || 0;
-      const rMax = (Number.isFinite(+cfg.max) && +cfg.max > rMin) ? +cfg.max : rMin + Math.max(1, +cfg.railLength || 600);
-      ctx.strokeStyle = 'rgba(167,139,250,.82)';
-      ctx.lineWidth = 2;
-      line3([cx + dx * rMin, h, cz + dz * rMin], [cx + dx * rMax, h, cz + dz * rMax]);
-      if (showGhost && Number.isFinite(machVal)) {
-        const gDot = [cx + dx * machVal, h + 12, cz + dz * machVal];
-        const gsp = project(gDot);
-        if (gsp) {
-          ctx.globalAlpha = 0.55;
-          ctx.fillStyle = '#ffb3d9';
-          ctx.beginPath(); ctx.arc(gsp[0], gsp[1], 7, 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-      }
-      const dot = [cx + dx * val, h + 12, cz + dz * val];
-      const sp = project(dot);
-      if (sp) {
-        handles[`aux${axis}`] = { kind: 'auxLinear', axis, x: sp[0], y: sp[1], r: 16, p0: [cx, h + 12, cz], dir: [dx, 0, dz] };
-        ctx.fillStyle = '#a78bfa';
-        ctx.beginPath(); ctx.arc(sp[0], sp[1], 8, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-  }
-  ctx.restore();
-}
-
-function drawGrid() {
-  const t = getTheme();
-  ctx.strokeStyle = t.border; ctx.lineWidth = 1; ctx.globalAlpha = 0.7;
-  const L = lim.x, ext = 160, step = 50;
-  for (let x = -ext; x <= L + ext; x += step) line3([x, 0, -ext], [x, 0, ext]);
-  for (let z = -ext; z <= ext; z += step) line3([-ext, 0, z], [L + ext, 0, z]);
-  ctx.globalAlpha = 1;
-}
-function line3(a, b) {
-  const pa = project(a), pb = project(b);
-  if (!pa || !pb) return;
-  ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
-}
-function polyline3(points, closed = false) {
-  const pts = points.map(project).filter(Boolean);
-  if (pts.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  if (closed) ctx.closePath();
-  ctx.stroke();
-}
-
-let handles = {};   // screen-space handle dots
-function render() {
-  try { if (!t3Active) drawFrame(); }
-  catch (err) { console.error('[motion-slider] frame error', err); }
-  requestAnimationFrame(render);
-}
-function drawFrame() {
-  if (!W || !H) resize();
-  if (!W || !H) return;          // still no size — skip this frame, try again next
-  computeCam();
-  const t = getTheme();
-  ctx.clearRect(0, 0, W, H);
-
-  drawGrid();
-
-  const prims = [];
-  // Ghost (green, semi-transparent) follows machine's actual MPos.
-  // Hidden during playback — the main camera takes over tracking the machine.
-  if (mach.known && !isRunning) buildRig(prims, machineToVisual(mach), 0.32, true);
-  // Main rig shows virtual/drag target — where user has positioned the visualiser
-  const hp = buildRig(prims, machineToVisual(virt), 1, false);
-
-  prims.sort((a, b) => b.depth - a.depth);
-  for (const p of prims) {
-    ctx.globalAlpha = p.alpha;
-    ctx.fillStyle = p.fill;
-    ctx.beginPath();
-    ctx.moveTo(p.pts[0][0], p.pts[0][1]);
-    for (let i = 1; i < p.pts.length; i++) ctx.lineTo(p.pts[i][0], p.pts[i][1]);
-    ctx.closePath(); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  // keyframe path markers along rail
-  if (keyframes.length) {
-    ctx.fillStyle = t.dim;
-    keyframes.forEach((k, i) => {
-      const vk = machineToVisual(k);
-      const s = project([vk.x, 14, -44]);
-      if (!s) return;
-      ctx.globalAlpha = 0.9;
-      ctx.beginPath(); ctx.arc(s[0], s[1], 3.5, 0, 7); ctx.fill();
-      ctx.font = '10px ui-sans-serif,system-ui';
-      ctx.fillText(String(i + 1), s[0] + 6, s[1] + 3);
-    });
-    ctx.globalAlpha = 1;
-  }
-
-  // ---- Gizmos & handles ----
-  handles = {};
-  rigInfo = hp;
-  drawAuxGeometry();
-  drawLensFrustum(hp);
-  const accent = (typeof t.accent === 'string' && t.accent[0] === '#') ? t.accent : '#f0a030';
-  const bg = t.bg || '#0c1018';
-
-  // Axis gizmos (carriage, slide arrows, pan ring, tilt ring) are hidden during
-  // sequence playback to reduce clutter — only the live camera + frustum show.
-  if (!isRunning) {
-  // Carriage — full block is clickable; highlight when active
-  const sCC = project(hp.carriage);
-  const sCL = project(hp.carriageLeft);
-  const sCR = project(hp.carriageRight);
-  if (sCC && sCL && sCR) {
-    const hw = Math.max(Math.abs(sCR[0] - sCL[0]) / 2 + 6, 38);
-    const hh = 16;
-    handles.carriage = { x: sCC[0], y: sCC[1], hw, hh, kind: 'bbox' };
-    const active = drag && drag.kind === 'carriage';
-    if (active) {
-      ctx.globalAlpha = 0.22; ctx.fillStyle = accent;
-      ctx.fillRect(sCC[0] - hw, sCC[1] - hh, hw * 2, hh * 2);
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  // X slide arrows — 3D triangles on each side of carriage, both trigger carriage drag
-  {
-    const cx = hp.carriage[0];
-    const active = drag && drag.kind === 'carriage';
-    for (const [dir, name] of []) {
-      const tipWp  = [cx + dir * 88, 47,      0];
-      const bas1Wp = [cx + dir * 66, 47 + 18, 0];
-      const bas2Wp = [cx + dir * 66, 47 - 18, 0];
-      const shfSWp = [cx + dir * 50, 47,      0];
-      const shfEWp = [cx + dir * 66, 47,      0];
-      const sTip   = project(tipWp);
-      const sB1    = project(bas1Wp);
-      const sB2    = project(bas2Wp);
-      const sSS    = project(shfSWp);
-      const sSE    = project(shfEWp);
-      if (!sTip || !sB1 || !sB2) continue;
-      // Hit bbox centred on arrow midpoint
-      const sHit = project([cx + dir * 72, 47, 0]);
-      if (sHit) handles[name] = { kind: 'bbox', x: sHit[0], y: sHit[1], hw: 32, hh: 24 };
-      ctx.globalAlpha = active ? 1 : 0.78;
-      ctx.fillStyle = accent;
-      // Shaft
-      if (sSS && sSE) {
-        ctx.lineWidth = 3; ctx.strokeStyle = accent;
-        ctx.beginPath(); ctx.moveTo(sSS[0], sSS[1]); ctx.lineTo(sSE[0], sSE[1]); ctx.stroke();
-      }
-      // Arrowhead
-      ctx.beginPath();
-      ctx.moveTo(sTip[0], sTip[1]);
-      ctx.lineTo(sB1[0], sB1[1]);
-      ctx.lineTo(sB2[0], sB2[1]);
-      ctx.closePath(); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // Pan rotation ring — FLAT in world XZ plane (horizontal disc matches the pan axis)
-  {
-    const panCenter = hp.panDiscCenter;
-    const panDir    = hp.panDir;
-    const PAN_R = 105;
-    const N     = 32;
-    const panRingPts = [];
-    for (let i = 0; i <= N; i++) {
-      const θ = (i / N) * Math.PI * 2;
-      const sp = project([panCenter[0] + PAN_R * Math.cos(θ), panCenter[1], PAN_R * Math.sin(θ)]);
-      if (sp) panRingPts.push(sp);
-    }
-    if (panRingPts.length > 3) {
-      const active = drag && drag.kind === 'pan';
-      handles.pan = { kind: 'flatRing', pts: panRingPts, tol: 26 };
-      ctx.globalAlpha = active ? 0.98 : 0.72;
-      ctx.strokeStyle = '#2dd4bf'; ctx.lineWidth = active ? 4 : 3;
-      ctx.setLineDash([7, 5]);
-      ctx.beginPath();
-      ctx.moveTo(panRingPts[0][0], panRingPts[0][1]);
-      for (let i = 1; i < panRingPts.length; i++) ctx.lineTo(panRingPts[i][0], panRingPts[i][1]);
-      ctx.closePath(); ctx.stroke();
-      ctx.setLineDash([]);
-      // Tick dot — on the ring at the direction the camera is currently panning toward
-      // panDir = [cos(panA), 0, -sin(panA)]; ring pt = [cx+R*cos(θ), cy, R*sin(θ)]
-      // → tick at [cx + R*panDir[0], cy, R*panDir[2]]
-      const tickSp = project([panCenter[0] + PAN_R * panDir[0], panCenter[1], PAN_R * panDir[2]]);
-      if (tickSp) {
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#2dd4bf';
-        ctx.beginPath(); ctx.arc(tickSp[0], tickSp[1], active ? 12 : 10, 0, Math.PI * 2); ctx.fill();
-        ctx.lineWidth = 2; ctx.strokeStyle = bg; ctx.stroke();
-      }
-      // Label near ring (offset from projected centre)
-      const sCentre = project(panCenter);
-      if (sCentre) {
-        ctx.font = '10px ui-sans-serif,system-ui';
-        ctx.fillStyle = '#2dd4bf'; ctx.globalAlpha = 0.8;
-        ctx.fillText('PAN', sCentre[0] - 13, sCentre[1] - 22);
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  // Tilt rotation ring — dashed circle around tilt pivot, dot tick at current tilt angle
-  const sTP = project(hp.pivot);
-  const sTH = project(hp.tilt);
-  if (sTP && sTH) {
-    const distToHandle = Math.hypot(sTP[0] - sTH[0], sTP[1] - sTH[1]);
-    const R = Math.max(distToHandle + 12, 46);
-    handles.tilt = { x: sTP[0], y: sTP[1], r: R, kind: 'ring' };
-    const active = drag && drag.kind === 'tilt';
-    ctx.globalAlpha = active ? 0.92 : 0.62;
-    ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = active ? 3 : 2;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath(); ctx.arc(sTP[0], sTP[1], R, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-    // Tick dot
-    const dx = sTH[0] - sTP[0], dy = sTH[1] - sTP[1];
-    const len = Math.hypot(dx, dy) || 1;
-    const tx = sTP[0] + (dx / len) * R, ty = sTP[1] + (dy / len) * R;
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#a78bfa';
-    ctx.beginPath(); ctx.arc(tx, ty, active ? 10 : 8, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = bg; ctx.stroke();
-    ctx.font = '10px ui-sans-serif,system-ui';
-    ctx.fillStyle = '#a78bfa'; ctx.globalAlpha = 0.8;
-    ctx.fillText('TILT', sTP[0] - 13, sTP[1] + 4);
-    ctx.globalAlpha = 1;
-  }
-  } // end !isRunning gizmo block
-
-  // ---- Focus line — dashed ray from camera lens ----
-  const sLens = project(hp.lens);
-  if (sLens) {
-    const isTracking = activeTrack >= 0 && focusObjects[activeTrack];
-    let fwdPt;
-    if (isTracking) {
-      const obj = focusObjects[activeTrack];
-      fwdPt = focusObjectWorld(obj);
-    } else {
-      fwdPt = hp.camFwd;
-    }
-    const sFwd = project(fwdPt);
-    if (sFwd) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(sLens[0], sLens[1]);
-      ctx.lineTo(sFwd[0], sFwd[1]);
-      ctx.strokeStyle = isTracking ? '#f0a030' : 'rgba(255,224,100,0.4)';
-      ctx.lineWidth = isTracking ? 2 : 1.5;
-      ctx.setLineDash([6, 5]);
-      ctx.globalAlpha = 0.88;
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  // ---- Focus objects in 3D world space ----
-  for (let fi = 0; fi < focusObjects.length; fi++) {
-    const obj = focusObjects[fi];
-    const wp = focusObjectWorld(obj);
-    const sp = project(wp);
-    if (!sp) continue;
-    const isTracked = fi === activeTrack;
-    const col = isTracked ? '#f0a030' : '#4a5568';
-    const r = isTracked ? 12 : 9;
-    // Sphere-like circle
-    ctx.beginPath(); ctx.arc(sp[0], sp[1], r, 0, Math.PI * 2);
-    ctx.fillStyle = col; ctx.globalAlpha = 0.88; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = isTracked ? '#fff8' : '#6b72807a';
-    ctx.globalAlpha = 1; ctx.stroke();
-    // Crosshair
-    ctx.strokeStyle = isTracked ? 'rgba(255,255,255,0.6)' : 'rgba(156,163,175,0.5)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(sp[0] - r * 0.55, sp[1]); ctx.lineTo(sp[0] + r * 0.55, sp[1]);
-    ctx.moveTo(sp[0], sp[1] - r * 0.55); ctx.lineTo(sp[0], sp[1] + r * 0.55);
-    ctx.stroke();
-    // Label
-    ctx.font = `${isTracked ? 'bold ' : ''}11px ui-sans-serif,system-ui`;
-    ctx.fillStyle = isTracked ? '#f0a030' : '#9ca3af';
-    ctx.globalAlpha = 0.9;
-    ctx.fillText(obj.name || `Obj ${fi + 1}`, sp[0] + r + 5, sp[1] + 4);
-    ctx.globalAlpha = 1;
-  }
-
+/* ================= HUD ================= */
+// DRO chips show the virtual/drag pose every frame; the MPos sub-lines are
+// updated in onStatus(). Kept as its own tiny loop so the HUD stays live
+// even before the Three.js scene finishes loading.
+(function hudLoop() {
   const shown = shownPose();
   $('vX').textContent = fmt(shown.x);
   $('vY').textContent = fmt(shown.y);
   $('vZ').textContent = fmt(shown.z);
-}
-let rigInfo = null;
-
-/* ================= Pointer interaction ================= */
-let drag = null;
-const pointers = new Map();
-let pinchDist = 0;
-
-function distToSeg(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-  const t = lenSq > 0 ? clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1) : 0;
-  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
-}
-
-function pickHandle(px, py) {
-  let best = null, bd = Infinity;
-  const ordered = [
-    ...Object.keys(handles).filter(k => k.startsWith('aux')),
-    'tilt', 'pan', 'carriage',
-  ];
-  for (const k of ordered) {
-    const h = handles[k];
-    if (!h) continue;
-    let d;
-    if (h.kind === 'flatRing') {
-      let minD = Infinity;
-      for (let i = 0; i < h.pts.length; i++) {
-        const n = (i + 1) % h.pts.length;
-        const sd = distToSeg(px, py, h.pts[i][0], h.pts[i][1], h.pts[n][0], h.pts[n][1]);
-        if (sd < minD) minD = sd;
-      }
-      d = minD > (h.tol || 20) ? Infinity : minD;
-    } else if (h.kind === 'ring') {
-      const dist = Math.hypot(h.x - px, h.y - py);
-      d = Math.abs(dist - h.r);
-      if (d > 22) d = Infinity;
-    } else if (h.kind === 'bbox') {
-      d = (Math.abs(px - h.x) <= h.hw && Math.abs(py - h.y) <= h.hh) ? 0 : Infinity;
-    } else if (h.kind === 'auxRotary' || h.kind === 'auxLinear') {
-      d = Math.hypot(h.x - px, h.y - py);
-      if (d > (h.r || 16)) d = Infinity;
-    } else {
-      d = Math.hypot(h.x - px, h.y - py);
-      if (d > 26) d = Infinity;
-    }
-    if (d < bd) { bd = d; best = k; }
-  }
-  return best;
-}
-
-cv.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); }); // prevent auto-scroll cursor
-
-cv.addEventListener('pointerdown', e => {
-  cv.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
-
-  // Middle mouse button → translate (pan) the camera view
-  if (e.button === 1) {
-    e.preventDefault();
-    drag = { kind: 'camMove', x: e.offsetX, y: e.offsetY };
-    cv.classList.add('dragging');
-    return;
-  }
-
-  if (pointers.size === 2) {
-    const [a, b] = [...pointers.values()];
-    pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
-    drag = { kind: 'pinch' };
-    return;
-  }
-  const hit = pickHandle(e.offsetX, e.offsetY);
-  if (hit && rigInfo) {
-    dragTarget = { ...virt };
-    liveSlewAt = 0;
-    const localVirt = machineToVisual(shownPose());
-    const ray = screenRay(e.offsetX, e.offsetY);
-    const picked = handles[hit];
-    if (picked && picked.kind === 'auxRotary') {
-      const cfg = auxAxes[picked.axis];
-      const hitP = rayPlane(ray, [picked.cx, 12, picked.cz], [0, 1, 0]);
-      const a0 = hitP ? Math.atan2(hitP[2] - picked.cz, hitP[0] - picked.cx) * 180 / Math.PI : +cfg.value || 0;
-      drag = { kind: 'auxRotary', axis: picked.axis, off: (+cfg.value || 0) - a0, sentAt: 0 };
-    } else if (picked && picked.kind === 'auxLinear') {
-      const cfg = auxAxes[picked.axis];
-      const t0 = rayLineParam(ray, picked.p0, picked.dir);
-      drag = { kind: 'auxLinear', axis: picked.axis, p0: picked.p0, dir: picked.dir, off: (+cfg.value || 0) - t0, sentAt: 0 };
-    } else if (hit === 'carriage') {
-      const t0 = rayLineParam(ray, [0, 47, 0], [1, 0, 0]);
-      drag = { kind: 'carriage', off: localVirt.x - t0 };
-    } else if (hit === 'pan') {
-      const planeY = rigInfo.pan[1];
-      const hitP = rayPlane(ray, [localVirt.x, planeY, 0], [0, 1, 0]);
-      const a0 = hitP ? Math.atan2(-(hitP[2]), hitP[0] - localVirt.x) : localVirt.y * Math.PI/180;
-      drag = { kind: 'pan', off: localVirt.y - a0 * 180/Math.PI, planeY };
-    } else {
-      const n = rigInfo.yokeAxis, p0 = rigInfo.pivot;
-      const hitP = rayPlane(ray, p0, n);
-      let a0 = localVirt.z * Math.PI/180;
-      if (hitP) {
-        const d = sub(hitP, p0);
-        a0 = Math.atan2(d[1], dot(d, rigInfo.panDir));
-      }
-      drag = { kind: 'tilt', off: localVirt.z - a0 * 180/Math.PI, n, p0 };
-    }
-    cv.classList.add('dragging');
-  } else {
-    drag = { kind: 'orbit', x: e.offsetX, y: e.offsetY };
-    cv.classList.add('dragging');
-  }
-});
-
-cv.addEventListener('pointermove', e => {
-  if (!drag) {
-    cv.classList.toggle('handle', !!pickHandle(e.offsetX, e.offsetY));
-    return;
-  }
-  const pt = pointers.get(e.pointerId);
-  if (pt) { pt.x = e.offsetX; pt.y = e.offsetY; }
-
-  if (drag.kind === 'pinch' && pointers.size === 2) {
-    const [a, b] = [...pointers.values()];
-    const d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (pinchDist > 0) cam.dist = clamp(cam.dist * pinchDist / d, 200, 4000);
-    pinchDist = d;
-    return;
-  }
-  if (drag.kind === 'orbit') {
-    cam.yaw -= (e.offsetX - drag.x) * 0.008;
-    cam.pitch = clamp(cam.pitch + (e.offsetY - drag.y) * 0.008, -0.1, 1.45);
-    drag.x = e.offsetX; drag.y = e.offsetY;
-    return;
-  }
-  if (drag.kind === 'camMove') {
-    const dx = e.offsetX - drag.x, dy = e.offsetY - drag.y;
-    if (camBasis) {
-      const scale = cam.dist / camBasis.fl;
-      // Translate the look-at point in the camera's right/up plane
-      cam.tx -= (camBasis.r[0] * dx - camBasis.u[0] * dy) * scale;
-      cam.ty -= (camBasis.r[1] * dx - camBasis.u[1] * dy) * scale;
-      cam.tz -= (camBasis.r[2] * dx - camBasis.u[2] * dy) * scale;
-    }
-    drag.x = e.offsetX; drag.y = e.offsetY;
-    return;
-  }
-  const ray = screenRay(e.offsetX, e.offsetY);
-  if (drag.kind === 'auxRotary') {
-    const cfg = auxAxes[drag.axis];
-    if (cfg) {
-      const { cx, cz } = axisSceneBase(cfg);
-      const hitP = rayPlane(ray, [cx, 12, cz], [0, 1, 0]);
-      if (hitP) {
-        let a = Math.atan2(hitP[2] - cz, hitP[0] - cx) * 180 / Math.PI + drag.off;
-        while (a - (+cfg.value || 0) > 180) a -= 360;
-        while (a - (+cfg.value || 0) < -180) a += 360;
-        const now = performance.now();
-        setAuxValue(drag.axis, a, now - (drag.sentAt || 0) > 250);
-        if (now - (drag.sentAt || 0) > 250) drag.sentAt = now;
-      }
-    }
-    return;
-  }
-  if (drag.kind === 'auxLinear') {
-    const t0 = rayLineParam(ray, drag.p0, drag.dir);
-    const now = performance.now();
-    setAuxValue(drag.axis, t0 + drag.off, now - (drag.sentAt || 0) > 250);
-    if (now - (drag.sentAt || 0) > 250) drag.sentAt = now;
-    return;
-  }
-  const next = machineToVisual(shownPose());
-  if (drag.kind === 'carriage') {
-    const t0 = rayLineParam(ray, [0, 47, 0], [1, 0, 0]);
-    next.x = t0 + drag.off;
-  } else if (drag.kind === 'pan') {
-    const hitP = rayPlane(ray, [next.x, drag.planeY, 0], [0, 1, 0]);
-    if (hitP) {
-      let a = Math.atan2(-(hitP[2]), hitP[0] - next.x) * 180/Math.PI + drag.off;
-      // unwrap toward current value to avoid 360° jumps
-      while (a - next.y > 180) a -= 360;
-      while (a - next.y < -180) a += 360;
-      next.y = a;
-    }
-  } else if (drag.kind === 'tilt') {
-    const p0 = [next.x, rigInfo.pivot[1], 0]; // pivot moves with carriage
-    const hitP = rayPlane(ray, p0, drag.n);
-    if (hitP) {
-      const d = sub(hitP, p0);
-      let a = Math.atan2(d[1], dot(d, rigInfo.panDir)) * 180/Math.PI + drag.off;
-      while (a - next.z > 180) a -= 360;
-      while (a - next.z < -180) a += 360;
-      next.z = a;
-    }
-  }
-  // Apply object tracking only when sliding X — pan/tilt drags are free moves
-  setDragTarget(visualToMachine(next), drag.kind === 'carriage');
-});
-
-function endPointer(e) {
-  pointers.delete(e.pointerId);
-  const wasHandle = drag && ['carriage','pan','tilt'].includes(drag.kind);
-  const wasPanTilt = drag && (drag.kind === 'pan' || drag.kind === 'tilt');
-  const wasAux = drag && ['auxRotary','auxLinear'].includes(drag.kind);
-  const auxAxis = wasAux ? drag.axis : '';
-  if (pointers.size === 0) { drag = null; cv.classList.remove('dragging'); }
-  else if (pointers.size === 1 && drag && drag.kind !== 'camMove')
-    drag = { kind: 'orbit', ...[...pointers.values()][0] };
-  if (wasHandle && (!drag || !['carriage','pan','tilt'].includes(drag.kind))) {
-    endLiveJog();
-    // A manual pan/tilt drag is a temporary glance away — once released, snap
-    // back to aim at the tracked object (X-axis drags already track live).
-    if (wasPanTilt) snapToTrackedObject();
-  }
-  if (wasAux && !drag) {
-    setAuxValue(auxAxis, auxAxes[auxAxis]?.value || 0, true);
-    renderAuxSettings();
-    saveSoon();
-    stopJogPumpSoon();
-  }
-}
-cv.addEventListener('pointerup', endPointer);
-cv.addEventListener('pointercancel', endPointer);
-cv.addEventListener('wheel', e => {
-  e.preventDefault();
-  cam.dist = clamp(cam.dist * (1 + Math.sign(e.deltaY) * 0.1), 200, 4000);
-}, { passive: false });
+  requestAnimationFrame(hudLoop);
+})();
 
 /* ================= Keyframes ================= */
 function totalMs() { return keyframes.reduce((s, k) => s + (+k.ms || 0), 0); }
@@ -2722,9 +2109,9 @@ function renderKfs() {
       </div>
       <div class="bottom">
         <div class="ms"><input type="text" inputmode="numeric" placeholder="00:00:02:000" value="${formatTimeMs(k.ms)}" data-f="ms"><span>time</span>
-          ${info.limited ? '<span class="warn">⚠ too fast — feed capped</span>' : ''}
+          ${info.limited ? '<span class="warn" title="Time too short — feed capped to the machine maximum">⚠<span class="txt"> too fast — feed capped</span></span>' : ''}
           ${info.dwell ? '<span class="dwell">dwell</span>' : ''}
-          ${k.trackMode === 'continue' && k.trackName ? `<span class="tracknote">continue track ${escHtml(k.trackName)}</span>` : ''}
+          ${k.trackMode === 'continue' && k.trackName ? `<span class="tracknote" title="Continues tracking ${escHtml(k.trackName)}">◎<span class="txt"> track ${escHtml(k.trackName)}</span></span>` : ''}
         </div>
         <button class="icon" data-a="go" title="Preview pose">👁</button>
         ${k.trackMode === 'continue' ? '<button class="icon" data-a="trackoff" title="Make this a fixed keyframe">T</button>' : ''}
@@ -2824,10 +2211,6 @@ function buildProgram() {
   return lines;
 }
 
-async function runProgramLine(line, timeoutMs) {
-  return callT('sendQuery', { command: line }, timeoutMs);
-}
-
 /* ================= Focus objects UI ================= */
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -2854,7 +2237,7 @@ function setPanelWidth(px, persist = false) {
   }
   const grip = $('panelResize');
   if (grip) grip.style.left = panel.getBoundingClientRect().left + 'px';
-  setTimeout(resize, 0);
+  setTimeout(t3HandleResize, 0);
 }
 
 function initPanelResize() {
@@ -2901,7 +2284,7 @@ function updateLensInputs() {
     const el = $(id);
     if (el) el.value = lensSettings[key];
   }
-  setToggleState('infinityToggle', lensSettings.infinityEnabled !== false);
+  setToggleState($('infinityToggle'), lensSettings.infinityEnabled !== false);
 }
 
 function readLensInputs() {
@@ -3278,11 +2661,9 @@ $('continueTrackCapture').addEventListener('change', () => {
 $('camHeight').addEventListener('change', () => {
   cameraHeight = Math.max(CAMERA_HEIGHT_MIN, +$('camHeight').value || 120);
   $('camHeight').value = cameraHeight;
-  frameLensHeight();
   saveSoon();
-  // 3D's tilt-pivot/yoke height is baked in at build time (t3BuildRig isn't
-  // re-run every frame the way 2D's buildRig is) — rebuild so it re-syncs to
-  // the new lensWorldHeight() instead of going stale until some other rebuild.
+  // The tilt-pivot/yoke height is baked in at build time — rebuild so it
+  // re-syncs to the new lensWorldHeight() instead of going stale.
   if (t3Scene) t3RebuildColoredRig();
 });
 
@@ -3344,14 +2725,27 @@ for (const id of ['sensorWidth', 'sensorHeight']) {
 }
 $('infinityToggle').addEventListener('click', () => {
   lensSettings.infinityEnabled = !lensSettings.infinityEnabled;
-  setToggleState('infinityToggle', lensSettings.infinityEnabled);
+  setToggleState($('infinityToggle'), lensSettings.infinityEnabled);
   saveSoon();
 });
+
+/* ================= Help / setup guide modal ================= */
+{
+  const overlay = $('helpOverlay');
+  const openHelp  = () => { overlay.classList.add('show'); $('helpClose').focus(); };
+  const closeHelp = () => { overlay.classList.remove('show'); $('helpSetup').focus(); };
+  $('helpSetup').addEventListener('click', openHelp);
+  $('helpClose').addEventListener('click', closeHelp);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeHelp(); });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && overlay.classList.contains('show')) { e.preventDefault(); closeHelp(); }
+  });
+}
 
 /* ================= Buttons ================= */
 $('liveToggle').addEventListener('click', () => {
   liveJog = !liveJog;
-  setToggleState('liveToggle', liveJog);
+  setToggleState($('liveToggle'), liveJog);
   if (!liveJog) {           // turning live mode off: halt streaming
     jogPumpOn = false; jogDirty = false;
     if (jogThrottle) { clearTimeout(jogThrottle); jogThrottle = null; }
@@ -3391,14 +2785,19 @@ $('run').addEventListener('click', async () => {
   if (orphaned.length) banner(`${orphaned.length} tracking keyframe(s) missing focus object — using stored angles`);
   isRunning = true;
   try {
-    const lineTimeoutMs = Math.max(10000, totalMs() + 5000);
+    // A planner-buffered 'ok' can lag by roughly one whole move, so scale the
+    // per-line ack timeout to the slowest keyframe (min 30s).
+    const ackTimeout = Math.max(30000, 2 * Math.max(0, ...keyframes.map(k => +k.ms || 0)) + 5000);
     for (const line of buildProgram()) {
       // Abort if the machine alarms mid-sequence (checked on each send).
       if (mach.state && mach.state.startsWith('Alarm')) { banner('Run aborted — machine alarm'); break; }
-      await runProgramLine(line, lineTimeoutMs);
+      // Waits for the controller's own ok/error (via the 'line' event), not
+      // just the host handing the line to the socket — real flow control, so
+      // long sequences can't overflow the transport buffers.
+      await sendAwaitOk(line, ackTimeout);
     }
   } catch (err) { banner(err?.message || 'Run failed'); }
-  finally { isRunning = false; }
+  finally { isRunning = false; ackWaiters.forEach(w => clearTimeout(w.timer)); ackWaiters = []; }
 });
 $('hold').addEventListener('click', () => send('!').catch(() => {}));
 $('resume').addEventListener('click', () => send('~').catch(() => {}));
@@ -3438,7 +2837,6 @@ for (const [id, key] of [['xMin','xMin'],['limX','x'],['panMin','panMin'],['panM
   $(id).addEventListener('change', () => {
     if (machineSetup.loaded) return; // machine $$ values are authoritative; inputs are display-only
     lim[key] = +$(id).value || lim[key];
-    if (key === 'x' || key === 'xMin') cam.tx = lim.x / 2;
     clampVirt(); clampKeyframes(); updateLimitInputs(); renderKfs(); saveSoon();
   });
 }
@@ -3475,7 +2873,6 @@ function currentSettingsPayload() {
   return {
     keyframes,
     lim: limToSave,
-    liveJog: false,
     homePose: { ...homePose },
     cameraHeight,
     lensSettings: { ...lensSettings },
@@ -3490,7 +2887,6 @@ function currentSettingsPayload() {
     streamIntervalMs: streamCapture.intervalMs,
     t3Colors: { ...t3Colors },
     panelCollapsed: { ...panelCollapsed },
-    preferredView: t3Active ? '3d' : '2d',
   };
 }
 
@@ -3570,9 +2966,11 @@ async function loadDeviceSettingsDirect() {
     } catch (_) {}
   }
   try {
-    const text = await callT('readFile', { path: '/plugins/motion-slider/settings.json', fs: 'local' }, 2500);
+    // fs:'local' already selects localfs — the path must match what writeFile
+    // uses (no /localfs HTTP prefix), or the fallback reads a nonexistent file.
+    const text = await callT('readFile', { path: `${SETTINGS_DIR}/${SETTINGS_FILE}`, fs: 'local' }, 2500);
     const data = JSON.parse(text);
-    logMachineSetting('bridge settings loaded', '/plugins/motion-slider/settings.json');
+    logMachineSetting('bridge settings loaded', `${SETTINGS_DIR}/${SETTINGS_FILE}`);
     return data;
   } catch (err) {
     logMachineSetting('settings file not loaded', err.message || String(err));
@@ -3632,8 +3030,8 @@ function applySavedSettings(s) {
   if (s.lim) Object.assign(lim, s.lim);
   if (s.jogFeed) $('jogFeed').value = s.jogFeed;
   if (s.defMs) $('defMs').value = formatTimeMs(parseTimeMs(s.defMs, 2000));
-  liveJog = false;
-  setToggleState('liveToggle', false);
+  // s.liveJog is deliberately IGNORED (older saves may contain it): live
+  // machine motion must be explicitly re-armed by the user each session.
   if (typeof s.joystickEnabled === 'boolean') setJoystickEnabled(s.joystickEnabled);
   if ([1, 0.5, 0.1].includes(+s.moveScale)) setMoveScale(+s.moveScale);
   if (Number.isFinite(+s.streamIntervalMs)) {
@@ -3649,15 +3047,8 @@ function applySavedSettings(s) {
     panelCollapsed = { ...s.panelCollapsed, setup: true };
     applyPanelCollapsed();
   }
-  // Default to the rendered (3D) view on first-ever access (no saved
-  // preference yet) — falls back to the offline wireframe automatically if
-  // Three.js can't load (see toggleView()'s t3LoadLibs error handling).
-  const preferredView = s.preferredView || '3d';
-  if (preferredView === '3d' && !t3Active) {
-    toggleView();
-  } else if (preferredView === '2d' && t3Active) {
-    toggleView();
-  }
+  // (Older saves may contain s.preferredView from when a 2D wireframe view
+  // existed — ignored; the rendered 3D view is the only view now.)
   if (s.homePose) {
     Object.assign(homePose, s.homePose);
     $('homePan').value = homePose.panOffset;
@@ -3696,7 +3087,6 @@ function applySavedSettings(s) {
     }
     syncLensFromAux();
   }
-  frameLensHeight();
   if (Array.isArray(s.focusObjects)) {
     focusObjects = s.focusObjects;
     ensureFocusObjectIds();
@@ -4100,58 +3490,33 @@ let t3ThemeIsDark = null;
 let t3FrustumNear = null, t3FrustumFar = null, t3FrustumRays = null, t3FrustumTrackLine = null, t3FrustumInf = null;
 let t3FocusGroup = null, t3FocusMarkers = new Map(), t3LabelsEl = null;
 
-function toggleView() {
-  const cv = $('cv');
-  const tc = $('threeContainer');
-  const btn = $('viewToggle');
-  t3Active = !t3Active;
-  updateColourSetupVisibility();
-  if (t3Active) {
-    btn.textContent = 'Wireframe'; btn.title = 'Switch to the wireframe view';
-    btn.classList.add('active');
-    cv.style.display = 'none';
-    tc.style.display = 'block';
-    t3LoadLibs(() => {
-      requestAnimationFrame(() => {
-        try {
-          t3Init();   // one-time: creates the renderer/scene/lights, if not already done
-          // Always re-sync on entry, not just the first time — rig dimensions,
-          // limits, and colours may have changed (e.g. a YAML reload) since the
-          // scene was first created, and t3Init() no-ops on repeat calls.
-          t3SyncCameraAndLights();
-          t3BuildRig();
-          t3BuildAux();
-          t3ThemeIsDark = null;
-          t3ApplyTheme();
-          t3HandleResize();
-        }
-        catch (err) {
-          console.error('[motion-slider] Three.js init error', err);
-          banner('Rendered view error: ' + (err.message || String(err)));
-        }
-      });
-    }, () => {
-      // Three.js couldn't load — fall back to the wireframe
-      // wireframe view instead of leaving an empty rendered container up.
-      banner('Three.js failed to load. Showing wireframe view instead.');
-      if (t3Active) toggleView();
+// The rendered Three.js scene is the app's only view — entered once at init.
+// Safe to call again (e.g. after a YAML/limits reload): t3Init() no-ops on
+// repeat calls and the rest re-syncs camera, rig, and theme.
+function enterRenderedView() {
+  t3Active = true;
+  t3LoadLibs(() => {
+    requestAnimationFrame(() => {
+      try {
+        t3Init();   // one-time: creates the renderer/scene/lights, if not already done
+        // Always re-sync, not just the first time — rig dimensions, limits,
+        // and colours may have changed (e.g. a YAML reload) since the scene
+        // was first created.
+        t3SyncCameraAndLights();
+        t3BuildRig();
+        t3BuildAux();
+        t3ThemeIsDark = null;
+        t3ApplyTheme();
+        t3HandleResize();
+      }
+      catch (err) {
+        console.error('[motion-slider] Three.js init error', err);
+        banner('Rendered view error: ' + (err.message || String(err)));
+      }
     });
-  } else {
-    btn.textContent = 'Render'; btn.title = 'Switch to the rendered scene view';
-    btn.classList.remove('active');
-    tc.style.display = 'none';
-    cv.style.display = '';
-    resize();
-    fitSliderView();
-  }
-}
-
-// The colour panel only configures the rendered (Three.js) scene's
-// materials — the offline wireframe view has no colour settings of its own
-// — so hide it entirely while the wireframe view is active.
-function updateColourSetupVisibility() {
-  const sec = $('colourSetupSec');
-  if (sec) sec.style.display = t3Active ? '' : 'none';
+  }, () => {
+    banner('Three.js failed to load — try reinstalling the plugin (three.min.js missing).');
+  });
 }
 
 let t3LoadErrPending = [];
@@ -4163,21 +3528,22 @@ function t3LoadLibs(cb, onError) {
   t3LibsLoading = true;
   const pending = [cb]; // queue callbacks while loading
   const done = () => { t3LibsReady = true; t3LibsLoading = false; t3LoadErrPending = []; pending.forEach(f => f()); };
-  const THREE_SRC = 'three.min.js';
-  const ORBIT_SRC = 'OrbitControls.js';
   function addScript(src, onload, onerror) {
     const s = Object.assign(document.createElement('script'), { src });
     s.onload = onload; s.onerror = onerror;
     document.head.appendChild(s);
   }
-  // Load bundled three.min.js, then try OrbitControls (optional — failure is non-fatal)
-  addScript(THREE_SRC, () => {
-    addScript(ORBIT_SRC, done, done);
+  // Three.js (0.132.2) and OrbitControls ship WITH the plugin — resolved
+  // relative to the plugin folder via FigUI's <base>. No CDN: rendered view
+  // works fully offline and no external code runs in the plugin context.
+  // OrbitControls is optional — failure is non-fatal.
+  addScript('three.min.js', () => {
+    addScript('OrbitControls.js', done, done);
   }, () => {
     t3LibsLoading = false;
     const errs = t3LoadErrPending; t3LoadErrPending = [];
     if (errs.length) errs.forEach(f => f());
-    else banner('Three.js failed to load');
+    else banner('Three.js failed to load — reinstall the plugin (three.min.js missing)');
   });
 }
 
@@ -4337,6 +3703,8 @@ function t3SyncCameraAndLights() {
   for (const x of [xMin, xMax]) for (const y of [0, yMax]) for (const z of [-zHalf, zHalf]) corners.push(new THREE.Vector3(x, y, z));
   let dist = Math.max(rl * 1.6, 400);
   const pad = 20;
+  const tc = $('threeContainer');
+  const W = tc?.clientWidth || 0, H = tc?.clientHeight || 0;
   if (W && H) {
     for (let i = 0; i < 6; i++) {
       t3Cam.position.copy(target).addScaledVector(dir, dist);
@@ -4409,7 +3777,7 @@ function t3Init() {
   t3Renderer.domElement.style.display = 'block';
   tc.appendChild(t3Renderer.domElement);
 
-  /* OrbitControls — optional (fails gracefully if unavailable) */
+  /* OrbitControls — optional (fails gracefully if the bundled file is missing) */
   if (typeof THREE.OrbitControls === 'function') {
     t3Orbit = new THREE.OrbitControls(t3Cam, t3Renderer.domElement);
     t3Orbit.enableDamping = true;
@@ -4476,26 +3844,22 @@ function t3Init() {
   })();
 }
 
-function t3DisposeObjects(...roots) {
-  const geometries = new Set();
-  const materials = new Set();
-  roots.forEach(root => {
-    if (!root) return;
-    root.traverse(obj => {
-      if (obj.geometry) geometries.add(obj.geometry);
-      const mat = obj.material;
-      if (Array.isArray(mat)) mat.forEach(m => { if (m) materials.add(m); });
-      else if (mat) materials.add(mat);
-    });
+// Removing a group from the scene does NOT free its GPU resources — rebuilds
+// (e.g. every color-picker input) would leak geometries/materials unbounded.
+// Dedupe materials via a Set so shared instances are disposed exactly once.
+function t3DisposeGroup(group) {
+  if (!group) return;
+  const mats = new Set();
+  group.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => mats.add(m));
   });
-  geometries.forEach(g => g.dispose?.());
-  materials.forEach(m => m.dispose?.());
+  for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
 }
 
 function t3BuildRig() {
-  if (t3Rail || t3Carriage) t3DisposeObjects(t3Rail, t3Carriage);
-  if (t3Rail)     { t3Scene.remove(t3Rail);     t3Rail = null; }
-  if (t3Carriage) { t3Scene.remove(t3Carriage); t3Carriage = null; }
+  if (t3Rail)     { t3Scene.remove(t3Rail);     t3DisposeGroup(t3Rail);     t3Rail = null; }
+  if (t3Carriage) { t3Scene.remove(t3Carriage); t3DisposeGroup(t3Carriage); t3Carriage = null; }
   t3PanDiscMesh = null; t3CamDiscMesh = null;
   t3TealRingMesh = null; t3PurpRingMesh = null;
   t3GizmoObjs = [];
@@ -4682,7 +4046,7 @@ function t3BuildRig() {
   // tilt at the physical machine position. Every part is slightly smaller than
   // its live counterpart (not just translucent) so coincident faces don't
   // z-fight/flicker when the machine is sitting at (or very near) the target.
-  if (t3GhostGroup) { t3Scene.remove(t3GhostGroup); t3GhostGroup = null; }
+  if (t3GhostGroup) { t3Scene.remove(t3GhostGroup); t3DisposeGroup(t3GhostGroup); t3GhostGroup = null; }
   t3GhostGroup = new THREE.Group();
   const ghostMat = new THREE.MeshStandardMaterial({ color: 0xffb3d9, transparent: true, opacity: 0.36, roughness: 0.6, depthWrite: false });
   const ghostPart = (geo) => { const m = new THREE.Mesh(geo, ghostMat); m.castShadow = false; m.receiveShadow = false; return m; };
@@ -4722,7 +4086,7 @@ function t3BuildRig() {
  * Mirrors drawAuxGeometry()'s 2D wireframe logic, but as static 3D meshes
  * positioned with axisSceneBase() (same cx/cz world coords as the 2D canvas). */
 function t3BuildAux() {
-  if (t3AuxGroup) { t3Scene.remove(t3AuxGroup); t3AuxGroup = null; }
+  if (t3AuxGroup) { t3Scene.remove(t3AuxGroup); t3DisposeGroup(t3AuxGroup); t3AuxGroup = null; }
   t3AuxMarkers = {};
   t3AuxGizmoObjs = [];
   if (!auxAxisAvailable) return;
@@ -5184,7 +4548,7 @@ function applyPanelCollapsed() {
   });
 }
 /* ══ 3D Gizmo Interaction ══════════════════════════════════════ */
-let _t3Ray = null; // lazy — THREE not loaded until CDN scripts run
+let _t3Ray = null; // lazy — THREE not loaded until the bundled scripts run
 
 function t3InitInteraction() {
   const cv = t3Renderer.domElement;
@@ -5372,12 +4736,9 @@ function t3OnPointerUp() {
 (async function init() {
   initPanelResize();
   initCollapsiblePanels();
-  $('viewToggle').addEventListener('click', toggleView);
-  // Paint immediately — the 3D rig must show even with no controller.
-  resize();
-  requestAnimationFrame(render);
-  setTimeout(resize, 60);   // catch late iframe layout
-  setTimeout(() => { resize(); setPanelWidth($('panel')?.getBoundingClientRect().width || 380); }, 300);
+  // Show the 3D scene immediately — the rig must show even with no controller.
+  enterRenderedView();
+  setTimeout(() => setPanelWidth($('panel')?.getBoundingClientRect().width || 380), 300);
 
   // Saved per-plugin settings (404 on first run is expected → treated as {}).
   try {
@@ -5402,7 +4763,9 @@ function t3OnPointerUp() {
   applyT3ColorsToInputs();
   renderAuxSettings();
   renderAuxControls();
-  fitSliderView();
+  // Machine settings may have changed the rig dimensions — re-sync/rebuild the
+  // scene (no-op safe: t3Init only runs once, the rest re-frames the rig).
+  enterRenderedView();
   clampVirt();
   clampKeyframes();
   renderFocusObjects();
@@ -5410,7 +4773,7 @@ function t3OnPointerUp() {
   try {
     const st = await callT('getStatus');
     onStatus(st);
-    if (mach.known) { Object.assign(virt, { x: mach.x, y: mach.y, z: mach.z }); clampVirt(); Object.assign(disp, virt); }
+    if (mach.known) { Object.assign(virt, { x: mach.x, y: mach.y, z: mach.z }); clampVirt(); }
   } catch (_) { banner('Not connected — virtual mode. Rig limits from defaults.'); }
 
   // If a saved session restored an active track, frame it immediately rather
@@ -5418,6 +4781,8 @@ function t3OnPointerUp() {
   snapToTrackedObject();
 
   try { await callT('subscribe', { event: 'status' }); } catch (_) {}
+  // Controller output lines (ok/error) — used for run-sequence flow control.
+  try { await callT('subscribe', { event: 'line' }); } catch (_) {}
   renderKfs();
 })();
 </script>
