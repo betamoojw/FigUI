@@ -1,7 +1,27 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import tailwindMangle from 'unplugin-tailwindcss-mangle/vite'
 import { fileURLToPath } from 'url'
+
+const mangleReservedPrefixes = [
+  'btn-',
+  'hl-',
+  'resize-handle',
+  'studio-',
+  'probe-step-',
+  'lucide',
+]
+const mangleReservedClasses = new Set([
+  'dark',
+  'light',
+  'anthracite-dark',
+  'midnight-dark',
+])
+const shouldMangleClass = (className: string) =>
+  /[:-]/.test(className) &&
+  !mangleReservedClasses.has(className) &&
+  !mangleReservedPrefixes.some((prefix) => className.startsWith(prefix))
 
 export default defineConfig(({ mode }) => ({
   resolve: {
@@ -16,13 +36,25 @@ export default defineConfig(({ mode }) => ({
   base: mode === 'demo' ? '/FigUI/' : '/',
   plugins: [
     react(),
-    ...(mode === 'esp32' ? [viteSingleFile()] : []),
+    ...(mode === 'esp32' ? [
+      tailwindMangle({
+        filter: shouldMangleClass,
+        generator: {
+          classPrefix: '_',
+        },
+        registry: {
+          file: '.tw-patch/tw-class-list.json',
+        },
+      }),
+      viteSingleFile(),
+    ] : []),
   ],
   build: {
     target: 'es2022',
     ...(mode === 'esp32' ? {
       // Favor transfer size over minifier speed for the firmware artifact.
       minify: 'terser',
+      cssMinify: 'lightningcss',
       modulePreload: { polyfill: false },
       terserOptions: {
         ecma: 2022,

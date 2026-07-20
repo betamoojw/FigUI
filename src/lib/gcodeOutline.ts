@@ -7,6 +7,7 @@ export interface FramingOptions {
   mode: FramingMode
   feedMmPerMin: number
   clearanceMm: number
+  travelZMm: number
 }
 
 interface Point {
@@ -28,6 +29,7 @@ const ARC_SAMPLE_TARGET_MM = 1.5
 const ARC_SAMPLE_MAX = 96
 const POINT_KEY_SCALE = 1000
 const CONNECT_TOLERANCE_MM = 0.001
+const Z_APPROACH_FEED_MAX_MM_PER_MIN = 200
 
 export function buildFramingGCode(model: GCodeModel, options: FramingOptions): string | null {
   const envelope = getCutEnvelope(model.segments)
@@ -39,17 +41,23 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
 
   if (path.length < 2) return null
 
-  const frameZ = envelope.maxZ + Math.max(0, options.clearanceMm)
+  const frameZ = envelope.maxZ + options.clearanceMm
+  if (!Number.isFinite(options.travelZMm)) throw new Error('Safe travel height must be valid.')
+  if (options.travelZMm < frameZ) throw new Error('Safe travel height must be at or above the frame height.')
   const feed = Math.max(1, options.feedMmPerMin)
+  const zApproachFeed = Math.min(feed, Z_APPROACH_FEED_MAX_MM_PER_MIN)
   const closedPath = closePath(path)
   const lines = [
     '(FluidUI framing routine)',
     `(${options.mode === 'rectangle' ? 'Rectangle' : 'Contour'} outline from cutting moves only)`,
     'G21 G90 G94',
-    `G0 Z${format(frameZ, 3)}`,
+    `G0 Z${format(options.travelZMm, 3)}`,
     `G0 X${format(closedPath[0].x, 3)} Y${format(closedPath[0].y, 3)}`,
+    `G1 F${format(zApproachFeed, 1)}`,
+    `G1 Z${format(frameZ, 3)}`,
     `G1 F${format(feed, 1)}`,
     ...closedPath.slice(1).map(point => `G1 X${format(point.x, 3)} Y${format(point.y, 3)}`),
+    `G0 Z${format(options.travelZMm, 3)}`,
     'M2',
   ]
   return lines.join('\n')

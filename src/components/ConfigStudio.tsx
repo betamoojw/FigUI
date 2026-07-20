@@ -1487,7 +1487,7 @@ function PinEditor({
       <select
         value={family}
         onChange={(e) => set(e.target.value)}
-        className="rounded-md border border-white/10 bg-[#10141c] px-2 py-2 font-mono text-xs outline-none"
+        className="rounded-md border studio-border studio-input px-2 py-2 font-mono text-xs outline-none"
       >
         {families.map((f) => (
           <option key={f}>{f}</option>
@@ -1497,7 +1497,7 @@ function PinEditor({
         <select
           value={index}
           onChange={(e) => set(family, e.target.value)}
-          className="rounded-md border border-white/10 bg-[#10141c] px-2 py-2 font-mono text-xs outline-none"
+          className="rounded-md border studio-border studio-input px-2 py-2 font-mono text-xs outline-none"
           aria-label={`${family} pin number`}
         >
           {pinOptions.map((pin) => (
@@ -1519,7 +1519,7 @@ function PinEditor({
           ])
         }
         disabled={family === "NO_PIN" || family === "void"}
-        className="rounded-md border border-white/10 bg-[#10141c] px-2 py-1.5 text-[10px] outline-none"
+        className="rounded-md border studio-border studio-input px-2 py-1.5 text-[10px] outline-none"
       >
         <option>high</option>
         <option>low</option>
@@ -1535,7 +1535,7 @@ function PinEditor({
           ])
         }
         disabled={family === "NO_PIN" || family === "void"}
-        className="rounded-md border border-white/10 bg-[#10141c] px-2 py-1.5 text-[10px] outline-none"
+        className="rounded-md border studio-border studio-input px-2 py-1.5 text-[10px] outline-none"
       >
         <option value="">No pull</option>
         <option value="pu">Pull up</option>
@@ -1592,11 +1592,11 @@ function MachineHub({
           dy: (e.clientY - e.currentTarget.getBoundingClientRect().top) / zoom,
         });
       }}
-      className={`absolute w-[360px] cursor-grab select-none rounded-xl border bg-[#1b212c] shadow-[0_14px_40px_rgba(0,0,0,.38)] ${selected ? "border-white/35 ring-1 ring-white/10" : "border-white/10"}`}
+      className={`absolute w-[360px] studio-grabbable cursor-grab select-none rounded-xl border studio-node shadow-[0_14px_40px_rgba(0,0,0,.38)] ${selected ? "border-white/35 ring-1 ring-white/10" : "studio-border"}`}
       style={{ left: node.x, top: node.y }}
     >
-      <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#111722] text-[#aeb9ca]">
+      <div className="flex items-center gap-3 border-b studio-border px-4 py-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg studio-button text-[#aeb9ca]">
           <Cpu size={18} />
         </span>
         <span>
@@ -1613,7 +1613,7 @@ function MachineHub({
           return (
             <div
               key={p.id}
-              className={`relative h-[88px] p-3 ${i % 2 === 0 ? "border-r" : ""} ${i < 2 ? "border-b" : ""} border-white/10`}
+              className={`relative h-[88px] p-3 ${i % 2 === 0 ? "border-r" : ""} ${i < 2 ? "border-b" : ""} studio-border`}
             >
               <div className="flex items-center gap-2">
                 <span
@@ -1631,7 +1631,7 @@ function MachineHub({
                       current === p.id ? null : p.id,
                     );
                   }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10 bg-[#111722] text-[#8794a8] hover:border-white/25 hover:text-white"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded border studio-border studio-button text-[#8794a8] hover:border-white/25 hover:text-white"
                   title={`Add ${p.label.toLowerCase()} component`}
                 >
                   <Plus size={12} />
@@ -1656,7 +1656,7 @@ function MachineHub({
                 <div
                   onPointerDown={(e) => e.stopPropagation()}
                   onWheel={(e) => e.stopPropagation()}
-                  className={`absolute z-50 mt-2 min-w-44 rounded-md border border-white/10 bg-[#171c26] p-1 shadow-2xl ${i % 2 === 0 ? "left-2" : "right-2"}`}
+                  className={`absolute z-50 mt-2 min-w-44 rounded-md border studio-border studio-panel p-1 shadow-2xl ${i % 2 === 0 ? "left-2" : "right-2"}`}
                 >
                   {ROOT_OPTIONS[p.id].map((option) => {
                     const exists = nodes.some(
@@ -1676,7 +1676,7 @@ function MachineHub({
                           onAdd(option.kind, option.title);
                           setOpenPartition(null);
                         }}
-                        className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs ${disabled ? "cursor-not-allowed text-[#465164]" : "text-[#bec7d5] hover:bg-white/[.06]"}`}
+                        className={`flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs ${disabled ? "cursor-not-allowed text-[#465164]" : "studio-text hover:bg-white/[.06]"}`}
                       >
                         <Plus
                           size={12}
@@ -1747,7 +1747,7 @@ function GraphNode({
           dy: (e.clientY - e.currentTarget.getBoundingClientRect().top) / zoom,
         });
       }}
-      className={`absolute h-[76px] w-[210px] cursor-grab select-none rounded-lg border bg-[#1b212c] text-left shadow-[0_8px_25px_rgba(0,0,0,.3)] active:cursor-grabbing ${selected ? "border-white/35 ring-1 ring-white/10" : "border-white/10 hover:border-white/20"}`}
+      className={`absolute h-[76px] w-[210px] studio-grabbable cursor-grab select-none rounded-lg border studio-node text-left shadow-[0_8px_25px_rgba(0,0,0,.3)] active:cursor-grabbing ${selected ? "border-white/35 ring-1 ring-white/10" : "studio-border hover:border-white/20"}`}
       style={{ left: node.x, top: node.y }}
     >
       <Port side={inputSide} />
@@ -1757,7 +1757,7 @@ function GraphNode({
       />
       <span className="flex h-[72px] items-center gap-3 p-3">
         <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-black/20"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md studio-icon-well"
           style={{ color: node.color }}
         >
           {node.kind === "axis" ? (
@@ -1775,10 +1775,10 @@ function GraphNode({
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold text-[#dce2eb]">
+          <span className="block truncate text-[13px] font-semibold studio-text">
             {node.title}
           </span>
-          <span className="line-clamp-2 text-[11px] leading-[14px] text-[#778498]">
+          <span className="line-clamp-2 text-[11px] leading-[14px] studio-muted">
             {node.subtitle}
           </span>
         </span>
@@ -1789,7 +1789,7 @@ function GraphNode({
               e.stopPropagation();
               setShowChildren((v) => !v);
             }}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10 bg-[#111722] text-[#8794a8] hover:text-white"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border studio-border studio-button text-[#8794a8] hover:text-white"
             title="Add child"
           >
             <Plus size={12} />
@@ -1800,7 +1800,7 @@ function GraphNode({
         <div
           onPointerDown={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
-          className="absolute left-full top-3 z-30 ml-2 min-w-40 rounded-md border border-white/10 bg-[#171c26] p-1 shadow-2xl"
+          className="absolute left-full top-3 z-30 ml-2 min-w-40 rounded-md border studio-border studio-panel p-1 shadow-2xl"
         >
           {children.map((child) => (
             <button
@@ -1810,7 +1810,7 @@ function GraphNode({
                 onAdd(node, child.kind, child.title);
                 setShowChildren(false);
               }}
-              className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-[#b9c2d0] hover:bg-white/[.06]"
+              className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs studio-text hover:bg-white/[.06]"
             >
               <Plus size={12} style={{ color: COLORS[child.kind] }} />
               {child.title}
@@ -2262,7 +2262,7 @@ export function ConfigStudio({
     panning.current = null;
   };
   return (
-    <div className="config-studio relative flex min-h-0 flex-1 overflow-hidden bg-[#11151d] text-[#d8dee9]">
+    <div className="config-studio relative flex min-h-0 flex-1 overflow-hidden bg-[#11151d] studio-text">
       <section
         className="relative min-w-0 flex-1 overflow-hidden"
         onWheel={handleWheel}
@@ -2284,8 +2284,8 @@ export function ConfigStudio({
           onPointerDown={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#171c26]/95 px-3 py-2 shadow-xl focus-within:border-white/25">
-            <Search size={14} className="text-[#778498]" />
+          <div className="flex items-center gap-2 rounded-md border studio-border studio-panel px-3 py-2 shadow-xl focus-within:border-white/25">
+            <Search size={14} className="studio-muted" />
             <input
               value={query}
               onFocus={() => setPalette(true)}
@@ -2302,14 +2302,14 @@ export function ConfigStudio({
                   setQuery("");
                   setPalette(false);
                 }}
-                className="text-[10px] text-[#6f7b8e] hover:text-white"
+                className="text-[10px] studio-muted hover:text-white"
               >
                 Clear
               </button>
             )}
           </div>
           {palette && (
-            <div className="mt-1 max-h-80 overflow-auto rounded-md border border-white/10 bg-[#171c26] p-1 shadow-2xl">
+            <div className="mt-1 max-h-80 overflow-auto rounded-md border studio-border studio-panel p-1 shadow-2xl">
               {PALETTE.map((group) => {
                 const matches = group.items.filter((item) =>
                   (item.title + item.sub)
@@ -2333,16 +2333,16 @@ export function ConfigStudio({
                         className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left hover:bg-white/[.06]"
                       >
                         <span
-                          className="flex h-7 w-7 items-center justify-center rounded border border-white/10 bg-[#202735]"
+                          className="flex h-7 w-7 items-center justify-center rounded border studio-border studio-elevated"
                           style={{ color: COLORS[item.kind] }}
                         >
                           <Box size={13} />
                         </span>
                         <span className="min-w-0">
-                          <span className="block text-xs text-[#cbd2df]">
+                          <span className="block text-xs studio-text">
                             {item.title}
                           </span>
-                          <span className="block truncate text-[10px] text-[#687589]">
+                          <span className="block truncate text-[10px] studio-muted">
                             {item.sub}
                           </span>
                         </span>
@@ -2354,7 +2354,7 @@ export function ConfigStudio({
             </div>
           )}
         </div>
-        <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1 rounded-md border border-white/10 bg-[#171c26]/95 p-1 shadow-xl">
+        <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1 rounded-md border studio-border studio-panel p-1 shadow-xl">
           <button
             onClick={() => restoreHistory("undo")}
             disabled={!undoRef.current.length}
@@ -2557,7 +2557,7 @@ export function ConfigStudio({
           )}
           {pendingPlacement && (
             <div
-              className="pointer-events-none absolute h-[76px] w-[210px] rounded-lg border border-dashed bg-[#1b212c]/80 shadow-2xl"
+              className="pointer-events-none absolute h-[76px] w-[210px] rounded-lg border border-dashed studio-node shadow-2xl"
               style={{
                 left: pendingPlacement.position.x,
                 top: pendingPlacement.position.y,
@@ -2570,7 +2570,7 @@ export function ConfigStudio({
               />
               <span className="flex h-[72px] items-center gap-3 p-3">
                 <span
-                  className="flex h-8 w-8 items-center justify-center rounded-md bg-black/20"
+                  className="flex h-8 w-8 items-center justify-center rounded-md studio-icon-well"
                   style={{ color: COLORS[pendingPlacement.kind] }}
                 >
                   <Plus size={16} />
@@ -2579,7 +2579,7 @@ export function ConfigStudio({
                   <span className="block text-xs font-semibold">
                     {pendingPlacement.title}
                   </span>
-                  <span className="block text-[10px] text-[#778498]">
+                  <span className="block text-[10px] studio-muted">
                     Click or tap to place
                   </span>
                 </span>
@@ -2592,7 +2592,7 @@ export function ConfigStudio({
             className="absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border px-3 py-2 text-xs shadow-xl"
             style={{
               borderColor: COLORS[pendingPlacement.kind],
-              background: "#171c26",
+              background: "var(--studio-panel)",
             }}
           >
             <span>
@@ -2600,23 +2600,23 @@ export function ConfigStudio({
             </span>
             <button
               onClick={() => setPendingPlacement(null)}
-              className="rounded border border-white/10 px-2 py-1 text-[#9aa6b8] hover:text-white"
+              className="rounded border studio-border px-2 py-1 text-[#9aa6b8] hover:text-white"
             >
               Cancel
             </button>
           </div>
         ) : (
-          <div className="absolute bottom-3 left-3 rounded border border-white/10 bg-[#171c26]/90 px-2.5 py-1.5 text-[10px] text-[#69768a]">
+          <div className="absolute bottom-3 left-3 rounded border studio-border studio-panel px-2.5 py-1.5 text-[10px] text-[#69768a]">
             Drag canvas to pan · Scroll to zoom · Select a node to configure
           </div>
         )}
       </section>
-      <aside className="z-20 w-[320px] shrink-0 border-l border-white/10 bg-[#171c26]">
+      <aside className="z-20 w-[320px] shrink-0 border-l studio-border studio-panel">
         {active ? (
           <>
-            <div className="flex items-center gap-3 border-b border-white/10 p-4">
+            <div className="flex items-center gap-3 border-b studio-border p-4">
               <span
-                className="flex h-9 w-9 items-center justify-center rounded-md bg-black/20"
+                className="flex h-9 w-9 items-center justify-center rounded-md studio-icon-well"
                 style={{ color: active.color }}
               >
                 <SlidersHorizontal size={17} />
@@ -2625,7 +2625,7 @@ export function ConfigStudio({
                 <span className="block truncate text-sm font-semibold">
                   {active.title}
                 </span>
-                <span className="block text-[10px] uppercase tracking-widest text-[#6f7b8e]">
+                <span className="block text-[10px] uppercase tracking-widest studio-muted">
                   {active.kind} node
                 </span>
               </span>
@@ -2638,8 +2638,8 @@ export function ConfigStudio({
                 </button>
               )}
             </div>
-            <div className="border-b border-white/10 p-3">
-              <label className="flex items-center gap-2 rounded-md border border-white/10 bg-[#10141c] px-3 py-2.5 focus-within:border-blue-500/50">
+            <div className="border-b studio-border p-3">
+              <label className="flex items-center gap-2 rounded-md border studio-border studio-input px-3 py-2.5 focus-within:border-blue-500/50">
                 <Search size={15} className="shrink-0 text-[#707d90]" />
                 <input
                   value={propertyQuery}
@@ -2714,7 +2714,7 @@ export function ConfigStudio({
                         <select
                           value={active.fields[f.key]}
                           onChange={(e) => update(f.key, e.target.value)}
-                          className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 text-xs outline-none"
+                          className="w-full rounded-md border studio-border studio-input px-2.5 py-2 text-xs outline-none"
                         >
                           {f.options.map((o) => (
                             <option key={o}>{o}</option>
@@ -2727,7 +2727,7 @@ export function ConfigStudio({
                           max={f.max}
                           value={active.fields[f.key] ?? ""}
                           onChange={(e) => update(f.key, e.target.value)}
-                          className="w-full rounded-md border border-white/10 bg-[#10141c] px-2.5 py-2 font-mono text-xs outline-none"
+                          className="w-full rounded-md border studio-border studio-input px-2.5 py-2 font-mono text-xs outline-none"
                         />
                       )}
                     </label>

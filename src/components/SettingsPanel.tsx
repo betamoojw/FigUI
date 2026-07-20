@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   RefreshCw,
   Search,
@@ -415,15 +415,38 @@ interface SettingRowProps {
   onSave: (p: string, t: string, v: string) => Promise<void>;
 }
 
+function isBooleanTreeSetting(setting: Setting): boolean {
+  return setting.F === "tree" && setting.T === "B";
+}
+
+function normalizeSettingValueForSave(setting: Setting, value: string): string {
+  if (!isBooleanTreeSetting(setting)) return value;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" ? "true" : "false";
+}
+
+function booleanSettingValueIsOn(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  return Number(value) !== 0;
+}
+
 function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   const [value, setValue] = useState(setting.V);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  useEffect(() => {
+    setValue(setting.V);
+  }, [setting.V]);
 
   const changed = value !== setting.V;
   const unit = inferUnit(setting.P);
   const label = displayLabel(setting);
   const opts = setting.O ?? [];
   const isNumeric = setting.T === "I" || setting.T === "F" || setting.T === "R";
+  const isPassword = /(?:^|\/)password$/i.test(setting.P);
+  const maskedPassword = isPassword && /^\*{4,}$/.test(value.trim());
 
   const optVals = opts.map((o) => Object.values(o)[0]).sort((a, b) => a - b);
   const isToggle =
@@ -436,7 +459,7 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
     if (!changed || saveState === "saving") return;
     setSaveState("saving");
     try {
-      await onSave(setting.P, setting.T, value);
+      await onSave(setting.P, setting.T, normalizeSettingValueForSave(setting, value));
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 2500);
     } catch {
@@ -450,14 +473,14 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   }
 
   if (isToggle) {
-    const isOn = Number(value) !== 0;
+    const isOn = booleanSettingValueIsOn(value);
     const onEntry = opts.find((o) => Object.values(o)[0] === 1);
     const offEntry = opts.find((o) => Object.values(o)[0] === 0);
     const onVal = String(Object.values(onEntry ?? {})[0] ?? 1);
     const offVal = String(Object.values(offEntry ?? {})[0] ?? 0);
 
     function toggle() {
-      const next = isOn ? offVal : onVal;
+      const next = normalizeSettingValueForSave(setting, isOn ? offVal : onVal);
       setValue(next);
       onSave(setting.P, setting.T, next)
         .then(() => {
@@ -514,6 +537,10 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   }
 
   if (setting.T === "B" && opts.length > 0) {
+    const selectValue = isBooleanTreeSetting(setting)
+      ? normalizeSettingValueForSave(setting, value)
+      : value;
+
     return (
       <div
         className={`flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0
@@ -529,14 +556,18 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <select
-            value={value}
+            value={selectValue}
             onChange={(e) => setValue(e.target.value)}
             className="input-field py-1 text-sm w-36"
           >
             {opts.map((opt) => {
               const [optLabel, optVal] = Object.entries(opt)[0];
+              const optionValue = normalizeSettingValueForSave(
+                setting,
+                String(optVal),
+              );
               return (
-                <option key={optVal} value={String(optVal)}>
+                <option key={String(optVal)} value={optionValue}>
                   {optLabel}
                 </option>
               );
@@ -568,9 +599,12 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
       </div>
       <div className="flex items-center gap-2">
         <input
-          type={isNumeric ? "number" : "text"}
+          type={isPassword ? "password" : isNumeric ? "number" : "text"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => {
+            if (maskedPassword) e.currentTarget.select();
+          }}
           onKeyDown={handleKey}
           step={isNumeric ? (setting.T === "R" ? "any" : "1") : undefined}
           min={
@@ -668,13 +702,23 @@ function updateYamlInPlace(
   return yaml;
 }
 
-async function updateConfigYaml(
-  settingPath: string,
-  value: string,
+interface PendingConfigChange {
+  value: string;
+}
+
+async function updateConfigYamlBatch(
+  changes: Record<string, PendingConfigChange>,
 ): Promise<void> {
+  const entries = Object.entries(changes);
+  if (entries.length === 0) return;
+
   try {
     const configContent = await fetchFileContent("/config.yaml", "local");
-    const updatedContent = updateYamlInPlace(configContent, settingPath, value);
+    const updatedContent = entries.reduce(
+      (yaml, [settingPath, change]) =>
+        updateYamlInPlace(yaml, settingPath, change.value),
+      configContent,
+    );
     await saveFileContent("/", "config.yaml", updatedContent, "local");
   } catch (error) {
     console.warn("Failed to update config.yaml:", error);
@@ -1214,6 +1258,7 @@ function FirmwareTab() {
 
 interface SettingsPanelProps {
   onClose?: () => void;
+  onRequestCloseReady?: (requestClose: (() => void) | null) => void;
 }
 
 interface ESPNowPendant {
@@ -1521,7 +1566,10 @@ function ESPNowPendantsTab() {
   );
 }
 
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
+export function SettingsPanel({
+  onClose,
+  onRequestCloseReady,
+}: SettingsPanelProps) {
   const espInfo = useMachineStore((s) => s.espInfo);
   const units = useMachineStore((s) => s.units);
   const setUnits = useMachineStore((s) => s.setUnits);
@@ -1543,9 +1591,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [category, setCategory] = useState("workspace");
   const [subKey, setSubKey] = useState("");
   const [restarting, setRestarting] = useState(false);
+  const [pendingConfigChanges, setPendingConfigChanges] = useState<
+    Record<string, PendingConfigChange>
+  >({});
+  const [savingConfigFile, setSavingConfigFile] = useState(false);
 
-  function openConfigStudio() {
-    onClose?.();
+  async function openConfigStudio() {
+    const closed = await requestClose();
+    if (!closed) return;
     setTimeout(
       () => window.dispatchEvent(new CustomEvent("config:open-studio")),
       0,
@@ -1595,32 +1648,71 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     // Always update runtime configuration first
     await sendCommand(`[ESP401]P=${p} T=${t} V=${v}`);
 
+    const setting = settings.find((s) => s.P === p);
     const updatedSettings = settings.map((s) =>
       s.P === p ? { ...s, V: v } : s,
     );
     setSettings(updatedSettings);
     useMachineStore.getState().setControllerConfigSettings(updatedSettings);
 
-    // For 'tree' settings (config.yaml sourced), also update the persistent config file
-    const setting = settings.find((s) => s.P === p);
     if (setting?.F === "tree") {
-      try {
-        await updateConfigYaml(p, v);
-      } catch (error) {
-        console.warn(
-          `Runtime updated but config.yaml persistence failed for ${p}:`,
-          error,
-        );
-        // Don't throw - runtime change was successful, persistence failure is non-critical
-      }
+      setPendingConfigChanges((current) => ({
+        ...current,
+        [p]: { value: v },
+      }));
     }
   }
 
+  const requestClose = useCallback(async (): Promise<boolean> => {
+    if (savingConfigFile) return false;
+
+    const pendingCount = Object.keys(pendingConfigChanges).length;
+    if (pendingCount === 0) {
+      onClose?.();
+      return true;
+    }
+
+    const shouldSave = confirm(
+      `Machine config changed. Save ${pendingCount === 1 ? "this change" : "these changes"} to config.yaml?\n\n` +
+        "OK saves the config file. Cancel closes without updating config.yaml.",
+    );
+
+    if (shouldSave) {
+      setSavingConfigFile(true);
+      try {
+        await updateConfigYamlBatch(pendingConfigChanges);
+        setPendingConfigChanges({});
+      } catch (error) {
+        alert(
+          `Runtime settings were sent, but config.yaml could not be updated.\n\n${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return false;
+      } finally {
+        setSavingConfigFile(false);
+      }
+    } else {
+      setPendingConfigChanges({});
+    }
+
+    onClose?.();
+    return true;
+  }, [onClose, pendingConfigChanges, savingConfigFile]);
+
+  useEffect(() => {
+    onRequestCloseReady?.(() => {
+      requestClose();
+    });
+    return () => onRequestCloseReady?.(null);
+  }, [onRequestCloseReady, requestClose]);
+
   async function restart() {
     if (!confirm("Restart the device now?")) return;
+    const closed = await requestClose();
+    if (!closed) return;
     setRestarting(true);
     useMachineStore.getState().setRestarting(true);
-    onClose?.();
     // Expected: the controller tears down TCP mid-response, so fetch rejects.
     try {
       await sendCommand("[ESP444]RESTART");
@@ -1674,14 +1766,31 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     if (category === "config" && subKey) {
       list = list.filter((s) => treeSubcat(s.P) === subKey);
     }
+    if (category === "wifi") {
+      const groupOrder: Record<string, number> = { Hostname: 0, WiFi: 1, Sta: 2, AP: 3 };
+      const fieldOrder: Record<string, number> = { SSID: 0, Password: 1 };
+      list = [...list].sort((a, b) => {
+        const ap = a.P.split("/").filter(Boolean);
+        const bp = b.P.split("/").filter(Boolean);
+        const groupDiff =
+          (groupOrder[ap[0]] ?? 99) - (groupOrder[bp[0]] ?? 99);
+        if (groupDiff) return groupDiff;
+        const fieldDiff =
+          (fieldOrder[ap[ap.length - 1]] ?? 99) -
+          (fieldOrder[bp[bp.length - 1]] ?? 99);
+        return fieldDiff || displayLabel(a).localeCompare(displayLabel(b));
+      });
+    }
     return list;
   }, [settings, filter, category, subKey]);
 
   const groupedItems = useMemo((): ListItem[] => {
-    if ((category !== "config" && category !== "wifi") || filter.trim()) {
+    if (filter.trim()) {
       return visibleSettings.map((s) => ({ type: "setting", setting: s }));
     }
-    return buildGroupedItems(visibleSettings, subKey);
+    if (category === "config" || category === "wifi")
+      return buildGroupedItems(visibleSettings, subKey);
+    return visibleSettings.map((s) => ({ type: "setting", setting: s }));
   }, [visibleSettings, category, subKey, filter]);
 
   const isSearching = filter.trim().length > 0;
@@ -1732,7 +1841,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <button
               className="p-1.5 rounded-md text-text-muted hover:text-text-primary
                          hover:bg-elevated transition-colors ml-1"
-              onClick={onClose}
+              onClick={() => requestClose()}
+              disabled={savingConfigFile}
               title="Close (Esc)"
             >
               <X size={18} />
@@ -1836,11 +1946,19 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {!isSearching && activeCat && (
             <div className="shrink-0">
-              <div className="px-5 py-3 border-b border-border">
-                <h3 className="text-base font-semibold text-text-primary flex items-center gap-2">
-                  <activeCat.icon size={14} className="text-accent" />
-                  {activeCat.label}
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
+                <h3 className="min-w-0 text-base font-semibold text-text-primary flex items-center gap-2">
+                  <activeCat.icon size={14} className="text-accent shrink-0" />
+                  <span className="truncate">{activeCat.label}</span>
                 </h3>
+                {category === "config" && (
+                  <button
+                    className="btn btn-primary shrink-0 px-3 py-1.5 text-sm"
+                    onClick={openConfigStudio}
+                  >
+                    <FileCode2 size={14} /> Open Config Studio
+                  </button>
+                )}
               </div>
 
               {(category === "machine" || category === "config") &&
@@ -1868,28 +1986,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
               {category === "config" && (
                 <div
-                  className="flex items-center gap-2 px-4 py-2.5 border-b border-border
-                                bg-accent/5 text-sm text-text-dim"
+                  className="px-4 py-2 border-b border-border"
                 >
-                  <Info size={12} className="text-accent shrink-0 mt-px" />
-                  <span>
-                    These settings come from{" "}
-                    <span className="font-mono text-text-primary">
-                      config.yaml
-                    </span>
-                    . Changes made here will take place immediately and also
-                    update the{" "}
-                    <span className="font-mono text-text-primary">
-                      config.yaml
-                    </span>{" "}
-                    file.
-                  </span>
-                  <button
-                    className="btn btn-primary ml-auto shrink-0 px-3 py-1.5 text-sm"
-                    onClick={openConfigStudio}
+                  <div
+                    className="flex items-start gap-2 rounded border border-border bg-elevated/30
+                               px-3 py-2 text-sm leading-relaxed text-text-muted"
                   >
-                    <FileCode2 size={14} /> Open Config Studio
-                  </button>
+                    <Info size={13} className="text-accent shrink-0 mt-1" />
+                    <span>
+                      These settings come from{" "}
+                      <span className="font-mono font-medium text-text-primary">
+                        config.yaml
+                      </span>
+                      . Most changes made here take effect immediately. 
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

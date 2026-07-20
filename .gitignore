@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.tw-patch/
 .DS_Store
 strip.sh
 notes.md
