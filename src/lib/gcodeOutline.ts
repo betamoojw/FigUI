@@ -39,7 +39,7 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
 
   if (path.length < 2) return null
 
-  const frameZ = envelope.maxZ + Math.max(0, options.clearanceMm)
+  const frameZ = envelope.maxZ + options.clearanceMm
   const feed = Math.max(1, options.feedMmPerMin)
   const closedPath = closePath(path)
   const lines = [

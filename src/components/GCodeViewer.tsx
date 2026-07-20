@@ -1042,9 +1042,9 @@ function getStoredPositiveNumber(key: string, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function getStoredNonNegativeNumber(key: string, fallback: number) {
+function getStoredFiniteNumber(key: string, fallback: number) {
   const parsed = Number.parseFloat(localStorage.getItem(key) ?? '')
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+  return Number.isFinite(parsed) ? parsed : fallback
 }
 
 function formatInputValue(value: number, decimals: number) {
@@ -1825,7 +1825,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [showFramingDialog, setShowFramingDialog] = useState(false)
   const [framingMode, setFramingMode] = useState<FramingMode>(() => getStoredFramingMode())
   const [framingFeedInput, setFramingFeedInput] = useState(() => formatInputValue(mmToDisplay(getStoredPositiveNumber(FRAMING_FEED_KEY, 1000), units), units === 'in' ? 2 : 0))
-  const [framingClearanceInput, setFramingClearanceInput] = useState(() => formatInputValue(mmToDisplay(getStoredNonNegativeNumber(FRAMING_CLEARANCE_KEY, 5), units), units === 'in' ? 3 : 1))
+  const [framingClearanceInput, setFramingClearanceInput] = useState(() => formatInputValue(mmToDisplay(getStoredFiniteNumber(FRAMING_CLEARANCE_KEY, 5), units), units === 'in' ? 3 : 1))
   const [framingError, setFramingError] = useState<string | null>(null)
   const [restartInitialLine, setRestartInitialLine] = useState<number | null>(null)
   const isLocalFile = !!sourceText && !loadedPath
@@ -2742,7 +2742,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
   useEffect(() => {
     setFramingFeedInput(formatInputValue(mmToDisplay(getStoredPositiveNumber(FRAMING_FEED_KEY, 1000), units), units === 'in' ? 2 : 0))
-    setFramingClearanceInput(formatInputValue(mmToDisplay(getStoredNonNegativeNumber(FRAMING_CLEARANCE_KEY, 5), units), units === 'in' ? 3 : 1))
+    setFramingClearanceInput(formatInputValue(mmToDisplay(getStoredFiniteNumber(FRAMING_CLEARANCE_KEY, 5), units), units === 'in' ? 3 : 1))
   }, [units])
 
   function updateFramingMode(mode: FramingMode) {
@@ -2759,8 +2759,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
       setFramingError('Enter a framing feed rate greater than zero.')
       return
     }
-    if (!Number.isFinite(clearanceDisplay) || clearanceDisplay < 0) {
-      setFramingError('Enter a clearance height of zero or greater.')
+    if (!Number.isFinite(clearanceDisplay)) {
+      setFramingError('Enter a valid clearance height.')
       return
     }
 
@@ -3604,15 +3604,19 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold uppercase text-text-muted">Clearance above top ({linearUnitLabel(units)})</span>
+                <span className="mb-1.5 block text-xs font-semibold uppercase text-text-muted">Clearance from top ({linearUnitLabel(units)})</span>
                 <input
                   className="input-field font-mono"
                   inputMode="decimal"
                   value={framingClearanceInput}
                   onChange={event => { setFramingClearanceInput(event.currentTarget.value); setFramingError(null) }}
-                  title="Vertical clearance above the highest cutting move"
+                  title="Signed vertical offset from the highest cutting move"
                 />
               </label>
+
+              <div className="rounded border border-warning/35 bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning">
+                Check Z zero and clearance before starting. The first move rapids to this Z height.
+              </div>
 
               {framingError && (
                 <div className="rounded border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">

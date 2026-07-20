@@ -1946,11 +1946,19 @@ export function SettingsPanel({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {!isSearching && activeCat && (
             <div className="shrink-0">
-              <div className="px-5 py-3 border-b border-border">
-                <h3 className="text-base font-semibold text-text-primary flex items-center gap-2">
-                  <activeCat.icon size={14} className="text-accent" />
-                  {activeCat.label}
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
+                <h3 className="min-w-0 text-base font-semibold text-text-primary flex items-center gap-2">
+                  <activeCat.icon size={14} className="text-accent shrink-0" />
+                  <span className="truncate">{activeCat.label}</span>
                 </h3>
+                {category === "config" && (
+                  <button
+                    className="btn btn-primary shrink-0 px-3 py-1.5 text-sm"
+                    onClick={openConfigStudio}
+                  >
+                    <FileCode2 size={14} /> Open Config Studio
+                  </button>
+                )}
               </div>
 
               {(category === "machine" || category === "config") &&
@@ -1978,28 +1986,21 @@ export function SettingsPanel({
 
               {category === "config" && (
                 <div
-                  className="flex items-center gap-2 px-4 py-2.5 border-b border-border
-                                bg-accent/5 text-sm text-text-dim"
+                  className="px-4 py-2 border-b border-border"
                 >
-                  <Info size={12} className="text-accent shrink-0 mt-px" />
-                  <span>
-                    These settings come from{" "}
-                    <span className="font-mono text-text-primary">
-                      config.yaml
-                    </span>
-                    . Changes are sent to the controller now. When you close
-                    Settings, you can choose whether to save them to{" "}
-                    <span className="font-mono text-text-primary">
-                      config.yaml
-                    </span>
-                    . Restart FluidNC after homing, motion, or pin changes.
-                  </span>
-                  <button
-                    className="btn btn-primary ml-auto shrink-0 px-3 py-1.5 text-sm"
-                    onClick={openConfigStudio}
+                  <div
+                    className="flex items-start gap-2 rounded border border-border bg-elevated/30
+                               px-3 py-2 text-sm leading-relaxed text-text-muted"
                   >
-                    <FileCode2 size={14} /> Open Config Studio
-                  </button>
+                    <Info size={13} className="text-accent shrink-0 mt-1" />
+                    <span>
+                      These settings come from{" "}
+                      <span className="font-mono font-medium text-text-primary">
+                        config.yaml
+                      </span>
+                      . Most changes made here take effect immediately. 
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
