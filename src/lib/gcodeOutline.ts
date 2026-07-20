@@ -20,7 +20,7 @@ interface CutEnvelope {
   minY: number
   maxX: number
   maxY: number
-  maxCuttingZ: number
+  topZ: number
   points: Point[]
   closedContours: Point[][]
 }
@@ -30,6 +30,11 @@ const ARC_SAMPLE_MAX = 96
 const POINT_KEY_SCALE = 1000
 const CONNECT_TOLERANCE_MM = 0.001
 const XY_MOVE_TOLERANCE_MM = 0.001
+const Z_ZERO_TOLERANCE_MM = 0.001
+const TOP_ZERO_CUT_DEPTH_MM = 0.05
+const TOP_ZERO_LEADOUT_MAX_Z_MM = 2
+const TOP_ZERO_LEADOUT_MAX_LENGTH_MM = 2
+const TOP_ZERO_LEADOUT_MAX_LENGTH_FRACTION = 0.01
 const Z_APPROACH_FEED_MAX_MM_PER_MIN = 200
 
 export function buildFramingGCode(model: GCodeModel, options: FramingOptions): string | null {
@@ -42,12 +47,15 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
 
   if (path.length < 2) return null
 
-  const frameZ = envelope.maxCuttingZ + options.clearanceMm
+  const frameZ = envelope.topZ + options.clearanceMm
   if (!Number.isFinite(options.travelZMm)) throw new Error('Safe travel height must be valid.')
   if (options.travelZMm < frameZ) {
+    const detail = Math.abs(envelope.topZ) <= Z_ZERO_TOLERANCE_MM
+      ? `Safe travel height must be at least the ${format(options.clearanceMm, 3)} mm clearance from top.`
+      : `Required height is estimated stock top Z${format(envelope.topZ, 3)} mm plus ${format(options.clearanceMm, 3)} mm clearance from top.`
     throw new Error(
       `Safe travel height must be at least ${format(frameZ, 3)} mm. `
-      + `The highest XY cutting Z is ${format(envelope.maxCuttingZ, 3)} mm, plus ${format(options.clearanceMm, 3)} mm clearance from top.`,
+      + detail,
     )
   }
   const feed = Math.max(1, options.feedMmPerMin)
@@ -69,12 +77,21 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
   return lines.join('\n')
 }
 
+export function getFramingRequiredTravelZ(model: GCodeModel, clearanceMm: number): number | null {
+  if (!Number.isFinite(clearanceMm)) return null
+  const envelope = getCutEnvelope(model.segments)
+  return envelope ? envelope.topZ + clearanceMm : null
+}
+
 function getCutEnvelope(segments: Segment[]): CutEnvelope | null {
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
+  let minCuttingZ = Infinity
   let maxCuttingZ = -Infinity
+  let totalCuttingXYLength = 0
+  let positiveCuttingXYLength = 0
   const points: Point[] = []
   const closedContours: Point[][] = []
   const seen = new Set<string>()
@@ -115,7 +132,11 @@ function getCutEnvelope(segments: Segment[]): CutEnvelope | null {
       continue
     }
 
+    const length = xyMoveLength(seg)
+    minCuttingZ = Math.min(minCuttingZ, seg.z0, seg.z1)
     maxCuttingZ = Math.max(maxCuttingZ, seg.z0, seg.z1)
+    totalCuttingXYLength += length
+    positiveCuttingXYLength += positiveZLength(seg, length)
     const segmentPoints: Point[] = [{ x: seg.x0, y: seg.y0 }]
     if (seg.i !== undefined) {
       const arc = getArcGeometry(seg)
@@ -143,12 +164,53 @@ function getCutEnvelope(segments: Segment[]): CutEnvelope | null {
     captureClosedSuffix()
   }
   if (!Number.isFinite(minX) || points.length === 0) return null
-  return { minX, minY, maxX, maxY, maxCuttingZ, points, closedContours }
+  const topZ = estimateJobTopZ({ minCuttingZ, maxCuttingZ, totalCuttingXYLength, positiveCuttingXYLength })
+  return { minX, minY, maxX, maxY, topZ, points, closedContours }
 }
 
 function isXYCuttingMove(seg: Segment) {
   if (seg.i !== undefined) return true
   return (seg.x1 - seg.x0) ** 2 + (seg.y1 - seg.y0) ** 2 > XY_MOVE_TOLERANCE_MM ** 2
+}
+
+function xyMoveLength(seg: Segment) {
+  if (seg.i !== undefined) {
+    const arc = getArcGeometry(seg)
+    return arc.sweep * arc.r
+  }
+  return Math.sqrt((seg.x1 - seg.x0) ** 2 + (seg.y1 - seg.y0) ** 2)
+}
+
+function positiveZLength(seg: Segment, length: number) {
+  if (length <= 0) return 0
+  if (seg.z0 > Z_ZERO_TOLERANCE_MM && seg.z1 > Z_ZERO_TOLERANCE_MM) return length
+  if (seg.z0 <= Z_ZERO_TOLERANCE_MM && seg.z1 <= Z_ZERO_TOLERANCE_MM) return 0
+  const dz = seg.z1 - seg.z0
+  if (Math.abs(dz) <= Z_ZERO_TOLERANCE_MM) return seg.z0 > Z_ZERO_TOLERANCE_MM ? length : 0
+  const zeroCrossing = (Z_ZERO_TOLERANCE_MM - seg.z0) / dz
+  return seg.z0 > Z_ZERO_TOLERANCE_MM
+    ? length * clamp01(zeroCrossing)
+    : length * (1 - clamp01(zeroCrossing))
+}
+
+function estimateJobTopZ(stats: {
+  minCuttingZ: number
+  maxCuttingZ: number
+  totalCuttingXYLength: number
+  positiveCuttingXYLength: number
+}) {
+  if (!Number.isFinite(stats.maxCuttingZ)) return 0
+
+  // Top-zero CAM often ramps a short lead-out slightly above Z0; do not let
+  // that redefine the stock top, but preserve genuinely positive-Z programs.
+  const shortPositiveLeadout = stats.minCuttingZ < -TOP_ZERO_CUT_DEPTH_MM
+    && stats.maxCuttingZ > Z_ZERO_TOLERANCE_MM
+    && stats.maxCuttingZ <= TOP_ZERO_LEADOUT_MAX_Z_MM
+    && stats.positiveCuttingXYLength <= Math.max(
+      TOP_ZERO_LEADOUT_MAX_LENGTH_MM,
+      stats.totalCuttingXYLength * TOP_ZERO_LEADOUT_MAX_LENGTH_FRACTION,
+    )
+  return shortPositiveLeadout ? 0 : stats.maxCuttingZ
 }
 
 function rectanglePath(bounds: Pick<CutEnvelope, 'minX' | 'minY' | 'maxX' | 'maxY'>): Point[] {
@@ -249,6 +311,10 @@ function closePath(path: Point[]) {
   const last = path[path.length - 1]
   if (Math.abs(first.x - last.x) < 1e-6 && Math.abs(first.y - last.y) < 1e-6) return path
   return [...path, first]
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value))
 }
 
 const format = (value: number, digits: number) => String(+value.toFixed(digits))

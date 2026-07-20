@@ -12,7 +12,7 @@ import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../li
 import { RestartFromLineDialog } from './RestartFromLineDialog'
 import { useGCodeSenderStore } from '../store/gcodeSender'
 import { GCODE_ACCEPT_ATTRIBUTE, isGCodeFileName } from '../lib/gcodeFiles'
-import { buildFramingGCode, type FramingMode } from '../lib/gcodeOutline'
+import { buildFramingGCode, getFramingRequiredTravelZ, type FramingMode } from '../lib/gcodeOutline'
 
 const GCODE_EXTENSIONS_PREVIEW = '.g, .nc, .gcode, .ngc, .tap, or .cnc'
 
@@ -1050,6 +1050,11 @@ function getStoredFiniteNumber(key: string, fallback: number) {
 
 function formatInputValue(value: number, decimals: number) {
   return value.toFixed(decimals).replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '')
+}
+
+function formatCeilInputValue(value: number, decimals: number) {
+  const factor = 10 ** decimals
+  return formatInputValue(Math.ceil((value - Number.EPSILON) * factor) / factor, decimals)
 }
 
 function drawOrigin(ctx: CanvasRenderingContext2D, t: Transform) {
@@ -2754,6 +2759,22 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     setFramingError(null)
   }
 
+  function openFramingDialog() {
+    if (model) {
+      const clearanceDisplay = Number.parseFloat(framingClearanceInput)
+      const travelZDisplay = Number.parseFloat(framingTravelZInput)
+      if (Number.isFinite(clearanceDisplay)) {
+        const requiredTravelZMm = getFramingRequiredTravelZ(model, displayToMm(clearanceDisplay, units))
+        const currentTravelZMm = Number.isFinite(travelZDisplay) ? displayToMm(travelZDisplay, units) : -Infinity
+        if (requiredTravelZMm != null && currentTravelZMm < requiredTravelZMm) {
+          setFramingTravelZInput(formatCeilInputValue(mmToDisplay(requiredTravelZMm, units), units === 'in' ? 3 : 1))
+        }
+      }
+    }
+    setFramingError(null)
+    setShowFramingDialog(true)
+  }
+
   function startFramingRoutine() {
     if (!model) return
     const feedDisplay = Number.parseFloat(framingFeedInput)
@@ -3138,7 +3159,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                 <button
                   type="button"
                   className="flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-info/60 hover:text-info active:bg-elevated disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text-primary"
-                  onClick={() => { setFramingError(null); setShowFramingDialog(true) }}
+                  onClick={openFramingDialog}
                   disabled={!connected || status.state !== 'Idle'}
                   title={!connected || status.state !== 'Idle' ? 'Connect to an idle controller before framing' : 'Frame the cutting extents at clearance height'}
                 >
