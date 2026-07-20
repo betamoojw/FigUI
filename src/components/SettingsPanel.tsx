@@ -415,9 +415,30 @@ interface SettingRowProps {
   onSave: (p: string, t: string, v: string) => Promise<void>;
 }
 
+function isBooleanTreeSetting(setting: Setting): boolean {
+  return setting.F === "tree" && setting.T === "B";
+}
+
+function normalizeSettingValueForSave(setting: Setting, value: string): string {
+  if (!isBooleanTreeSetting(setting)) return value;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" ? "true" : "false";
+}
+
+function booleanSettingValueIsOn(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  return Number(value) !== 0;
+}
+
 function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   const [value, setValue] = useState(setting.V);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  useEffect(() => {
+    setValue(setting.V);
+  }, [setting.V]);
 
   const changed = value !== setting.V;
   const unit = inferUnit(setting.P);
@@ -436,7 +457,7 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
     if (!changed || saveState === "saving") return;
     setSaveState("saving");
     try {
-      await onSave(setting.P, setting.T, value);
+      await onSave(setting.P, setting.T, normalizeSettingValueForSave(setting, value));
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 2500);
     } catch {
@@ -450,14 +471,14 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   }
 
   if (isToggle) {
-    const isOn = Number(value) !== 0;
+    const isOn = booleanSettingValueIsOn(value);
     const onEntry = opts.find((o) => Object.values(o)[0] === 1);
     const offEntry = opts.find((o) => Object.values(o)[0] === 0);
     const onVal = String(Object.values(onEntry ?? {})[0] ?? 1);
     const offVal = String(Object.values(offEntry ?? {})[0] ?? 0);
 
     function toggle() {
-      const next = isOn ? offVal : onVal;
+      const next = normalizeSettingValueForSave(setting, isOn ? offVal : onVal);
       setValue(next);
       onSave(setting.P, setting.T, next)
         .then(() => {
@@ -514,6 +535,10 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   }
 
   if (setting.T === "B" && opts.length > 0) {
+    const selectValue = isBooleanTreeSetting(setting)
+      ? normalizeSettingValueForSave(setting, value)
+      : value;
+
     return (
       <div
         className={`flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0
@@ -529,14 +554,18 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <select
-            value={value}
+            value={selectValue}
             onChange={(e) => setValue(e.target.value)}
             className="input-field py-1 text-sm w-36"
           >
             {opts.map((opt) => {
               const [optLabel, optVal] = Object.entries(opt)[0];
+              const optionValue = normalizeSettingValueForSave(
+                setting,
+                String(optVal),
+              );
               return (
-                <option key={optVal} value={String(optVal)}>
+                <option key={String(optVal)} value={optionValue}>
                   {optLabel}
                 </option>
               );
@@ -1877,12 +1906,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <span className="font-mono text-text-primary">
                       config.yaml
                     </span>
-                    . Changes made here will take place immediately and also
-                    update the{" "}
+                    . Changes are sent to the controller when supported and
+                    also update the{" "}
                     <span className="font-mono text-text-primary">
                       config.yaml
                     </span>{" "}
-                    file.
+                    file. Restart FluidNC after homing, motion, or pin changes.
                   </span>
                   <button
                     className="btn btn-primary ml-auto shrink-0 px-3 py-1.5 text-sm"
