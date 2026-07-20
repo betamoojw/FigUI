@@ -445,6 +445,8 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
   const label = displayLabel(setting);
   const opts = setting.O ?? [];
   const isNumeric = setting.T === "I" || setting.T === "F" || setting.T === "R";
+  const isPassword = /(?:^|\/)password$/i.test(setting.P);
+  const maskedPassword = isPassword && /^\*{4,}$/.test(value.trim());
 
   const optVals = opts.map((o) => Object.values(o)[0]).sort((a, b) => a - b);
   const isToggle =
@@ -597,9 +599,12 @@ function SettingRow({ setting, showPath, onSave }: SettingRowProps) {
       </div>
       <div className="flex items-center gap-2">
         <input
-          type={isNumeric ? "number" : "text"}
+          type={isPassword ? "password" : isNumeric ? "number" : "text"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => {
+            if (maskedPassword) e.currentTarget.select();
+          }}
           onKeyDown={handleKey}
           step={isNumeric ? (setting.T === "R" ? "any" : "1") : undefined}
           min={
@@ -1761,14 +1766,31 @@ export function SettingsPanel({
     if (category === "config" && subKey) {
       list = list.filter((s) => treeSubcat(s.P) === subKey);
     }
+    if (category === "wifi") {
+      const groupOrder: Record<string, number> = { Hostname: 0, WiFi: 1, Sta: 2, AP: 3 };
+      const fieldOrder: Record<string, number> = { SSID: 0, Password: 1 };
+      list = [...list].sort((a, b) => {
+        const ap = a.P.split("/").filter(Boolean);
+        const bp = b.P.split("/").filter(Boolean);
+        const groupDiff =
+          (groupOrder[ap[0]] ?? 99) - (groupOrder[bp[0]] ?? 99);
+        if (groupDiff) return groupDiff;
+        const fieldDiff =
+          (fieldOrder[ap[ap.length - 1]] ?? 99) -
+          (fieldOrder[bp[bp.length - 1]] ?? 99);
+        return fieldDiff || displayLabel(a).localeCompare(displayLabel(b));
+      });
+    }
     return list;
   }, [settings, filter, category, subKey]);
 
   const groupedItems = useMemo((): ListItem[] => {
-    if ((category !== "config" && category !== "wifi") || filter.trim()) {
+    if (filter.trim()) {
       return visibleSettings.map((s) => ({ type: "setting", setting: s }));
     }
-    return buildGroupedItems(visibleSettings, subKey);
+    if (category === "config" || category === "wifi")
+      return buildGroupedItems(visibleSettings, subKey);
+    return visibleSettings.map((s) => ({ type: "setting", setting: s }));
   }, [visibleSettings, category, subKey, filter]);
 
   const isSearching = filter.trim().length > 0;
