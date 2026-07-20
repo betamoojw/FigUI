@@ -20,7 +20,7 @@ interface CutEnvelope {
   minY: number
   maxX: number
   maxY: number
-  maxZ: number
+  maxCuttingZ: number
   points: Point[]
   closedContours: Point[][]
 }
@@ -29,6 +29,7 @@ const ARC_SAMPLE_TARGET_MM = 1.5
 const ARC_SAMPLE_MAX = 96
 const POINT_KEY_SCALE = 1000
 const CONNECT_TOLERANCE_MM = 0.001
+const XY_MOVE_TOLERANCE_MM = 0.001
 const Z_APPROACH_FEED_MAX_MM_PER_MIN = 200
 
 export function buildFramingGCode(model: GCodeModel, options: FramingOptions): string | null {
@@ -41,9 +42,14 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
 
   if (path.length < 2) return null
 
-  const frameZ = envelope.maxZ + options.clearanceMm
+  const frameZ = envelope.maxCuttingZ + options.clearanceMm
   if (!Number.isFinite(options.travelZMm)) throw new Error('Safe travel height must be valid.')
-  if (options.travelZMm < frameZ) throw new Error('Safe travel height must be at or above the frame height.')
+  if (options.travelZMm < frameZ) {
+    throw new Error(
+      `Safe travel height must be at least ${format(frameZ, 3)} mm. `
+      + `The highest XY cutting Z is ${format(envelope.maxCuttingZ, 3)} mm, plus ${format(options.clearanceMm, 3)} mm clearance from top.`,
+    )
+  }
   const feed = Math.max(1, options.feedMmPerMin)
   const zApproachFeed = Math.min(feed, Z_APPROACH_FEED_MAX_MM_PER_MIN)
   const closedPath = closePath(path)
@@ -68,7 +74,7 @@ function getCutEnvelope(segments: Segment[]): CutEnvelope | null {
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
-  let maxZ = -Infinity
+  let maxCuttingZ = -Infinity
   const points: Point[] = []
   const closedContours: Point[][] = []
   const seen = new Set<string>()
@@ -104,12 +110,12 @@ function getCutEnvelope(segments: Segment[]): CutEnvelope | null {
   }
 
   for (const seg of segments) {
-    if (seg.moveType !== 'feed') {
+    if (seg.moveType !== 'feed' || !isXYCuttingMove(seg)) {
       activeContour = []
       continue
     }
 
-    maxZ = Math.max(maxZ, seg.z0, seg.z1)
+    maxCuttingZ = Math.max(maxCuttingZ, seg.z0, seg.z1)
     const segmentPoints: Point[] = [{ x: seg.x0, y: seg.y0 }]
     if (seg.i !== undefined) {
       const arc = getArcGeometry(seg)
@@ -137,7 +143,12 @@ function getCutEnvelope(segments: Segment[]): CutEnvelope | null {
     captureClosedSuffix()
   }
   if (!Number.isFinite(minX) || points.length === 0) return null
-  return { minX, minY, maxX, maxY, maxZ, points, closedContours }
+  return { minX, minY, maxX, maxY, maxCuttingZ, points, closedContours }
+}
+
+function isXYCuttingMove(seg: Segment) {
+  if (seg.i !== undefined) return true
+  return (seg.x1 - seg.x0) ** 2 + (seg.y1 - seg.y0) ** 2 > XY_MOVE_TOLERANCE_MM ** 2
 }
 
 function rectanglePath(bounds: Pick<CutEnvelope, 'minX' | 'minY' | 'maxX' | 'maxY'>): Point[] {
