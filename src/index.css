@@ -172,6 +172,8 @@ body {
   --studio-elevated: #202735;
   --studio-button: #111722;
   --studio-border: rgb(255 255 255 / 0.1);
+  --studio-icon-bg: rgb(255 255 255 / 0.06);
+  --studio-icon-border: rgb(255 255 255 / 0.08);
   --studio-text: #d8dee9;
   --studio-muted: #778498;
   --studio-label: #a9b3c2;
@@ -196,6 +198,8 @@ html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio {
   --studio-elevated: #e8ebf3;
   --studio-button: #e5e9f2;
   --studio-border: rgb(71 85 105 / 0.2);
+  --studio-icon-bg: #ede9ff;
+  --studio-icon-border: #d8d0ff;
   --studio-text: #172033;
   --studio-muted: #64748b;
   --studio-label: #536179;
@@ -211,40 +215,36 @@ html:not(.dark):not(.anthracite-dark):not(.midnight-dark) .config-studio {
 }
 html:not(.dark):not(.anthracite-dark):not(.midnight-dark)
   .config-studio
-  [class*="cursor-grab"] {
+  .studio-grabbable {
   cursor: move;
 }
 
-.config-studio [class*="bg-[#171c26]"] {
+.config-studio .studio-panel {
   background-color: var(--studio-panel) !important;
 }
-.config-studio [class*="bg-[#1b212c]"] {
+.config-studio .studio-node {
   background-color: var(--studio-node) !important;
 }
-.config-studio [class*="bg-[#10141c]"] {
+.config-studio .studio-input {
   background-color: var(--studio-input) !important;
 }
-.config-studio [class*="bg-[#202735]"] {
+.config-studio .studio-elevated {
   background-color: var(--studio-elevated) !important;
 }
-.config-studio [class*="bg-[#111722]"] {
+.config-studio .studio-button {
   background-color: var(--studio-button) !important;
 }
-.config-studio [class*="border-white/10"] {
+.config-studio .studio-border {
   border-color: var(--studio-border) !important;
 }
-.config-studio [class*="text-[#d8dee9]"] {
+.config-studio .studio-icon-well {
+  background-color: var(--studio-icon-bg);
+  border: 1px solid var(--studio-icon-border);
+}
+.config-studio .studio-text {
   color: var(--studio-text) !important;
 }
-.config-studio [class*="text-[#dce2eb]"],
-.config-studio [class*="text-[#cbd2df]"],
-.config-studio [class*="text-[#bec7d5]"],
-.config-studio [class*="text-[#b9c2d0]"] {
-  color: var(--studio-text) !important;
-}
-.config-studio [class*="text-[#778498]"],
-.config-studio [class*="text-[#687589]"],
-.config-studio [class*="text-[#6f7b8e]"] {
+.config-studio .studio-muted {
   color: var(--studio-muted) !important;
 }
 .config-studio .studio-property-label {
