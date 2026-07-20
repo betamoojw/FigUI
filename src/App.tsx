@@ -90,6 +90,10 @@ export function App() {
   const [phase, setPhase]   = useState<Phase>('connecting')
   const [errMsg, setErrMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const requestSettingsCloseRef = useRef<(() => void) | null>(null)
+  const requestSettingsClose = useCallback(() => {
+    requestSettingsCloseRef.current?.() ?? setSettingsOpen(false)
+  }, [])
   const [aboutOpen, setAboutOpen] = useState(false)
   const [mobilePanel, setMobilePanel]     = useState<MobilePanel>('control')
   const [tabletTab,   setTabletTab]       = useState<TabletRightTab>('viewer')
@@ -374,11 +378,13 @@ export function App() {
   useEffect(() => {
     if (!settingsOpen) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setSettingsOpen(false)
+      if (e.key === 'Escape') {
+        requestSettingsClose()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [settingsOpen])
+  }, [settingsOpen, requestSettingsClose])
 
   // On mobile/tablet, switch to the viewer when a file is selected; also kick off
   // the single shared download via the gcode store.
@@ -617,7 +623,7 @@ export function App() {
       {settingsOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4"
-          onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false) }}
+          onClick={e => { if (e.target === e.currentTarget) requestSettingsClose() }}
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative w-full sm:max-w-3xl
@@ -625,7 +631,12 @@ export function App() {
                           bg-surface border-t sm:border border-border
                           rounded-t-2xl sm:rounded-lg
                           shadow-2xl flex flex-col overflow-hidden animate-in">
-            <SettingsPanel onClose={() => setSettingsOpen(false)} />
+            <SettingsPanel
+              onClose={() => setSettingsOpen(false)}
+              onRequestCloseReady={requestClose => {
+                requestSettingsCloseRef.current = requestClose
+              }}
+            />
           </div>
         </div>
       )}

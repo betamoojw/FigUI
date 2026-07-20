@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   RefreshCw,
   Search,
@@ -697,13 +697,23 @@ function updateYamlInPlace(
   return yaml;
 }
 
-async function updateConfigYaml(
-  settingPath: string,
-  value: string,
+interface PendingConfigChange {
+  value: string;
+}
+
+async function updateConfigYamlBatch(
+  changes: Record<string, PendingConfigChange>,
 ): Promise<void> {
+  const entries = Object.entries(changes);
+  if (entries.length === 0) return;
+
   try {
     const configContent = await fetchFileContent("/config.yaml", "local");
-    const updatedContent = updateYamlInPlace(configContent, settingPath, value);
+    const updatedContent = entries.reduce(
+      (yaml, [settingPath, change]) =>
+        updateYamlInPlace(yaml, settingPath, change.value),
+      configContent,
+    );
     await saveFileContent("/", "config.yaml", updatedContent, "local");
   } catch (error) {
     console.warn("Failed to update config.yaml:", error);
@@ -1243,6 +1253,7 @@ function FirmwareTab() {
 
 interface SettingsPanelProps {
   onClose?: () => void;
+  onRequestCloseReady?: (requestClose: (() => void) | null) => void;
 }
 
 interface ESPNowPendant {
@@ -1550,7 +1561,10 @@ function ESPNowPendantsTab() {
   );
 }
 
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
+export function SettingsPanel({
+  onClose,
+  onRequestCloseReady,
+}: SettingsPanelProps) {
   const espInfo = useMachineStore((s) => s.espInfo);
   const units = useMachineStore((s) => s.units);
   const setUnits = useMachineStore((s) => s.setUnits);
@@ -1572,9 +1586,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [category, setCategory] = useState("workspace");
   const [subKey, setSubKey] = useState("");
   const [restarting, setRestarting] = useState(false);
+  const [pendingConfigChanges, setPendingConfigChanges] = useState<
+    Record<string, PendingConfigChange>
+  >({});
+  const [savingConfigFile, setSavingConfigFile] = useState(false);
 
-  function openConfigStudio() {
-    onClose?.();
+  async function openConfigStudio() {
+    const closed = await requestClose();
+    if (!closed) return;
     setTimeout(
       () => window.dispatchEvent(new CustomEvent("config:open-studio")),
       0,
@@ -1624,32 +1643,71 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     // Always update runtime configuration first
     await sendCommand(`[ESP401]P=${p} T=${t} V=${v}`);
 
+    const setting = settings.find((s) => s.P === p);
     const updatedSettings = settings.map((s) =>
       s.P === p ? { ...s, V: v } : s,
     );
     setSettings(updatedSettings);
     useMachineStore.getState().setControllerConfigSettings(updatedSettings);
 
-    // For 'tree' settings (config.yaml sourced), also update the persistent config file
-    const setting = settings.find((s) => s.P === p);
     if (setting?.F === "tree") {
-      try {
-        await updateConfigYaml(p, v);
-      } catch (error) {
-        console.warn(
-          `Runtime updated but config.yaml persistence failed for ${p}:`,
-          error,
-        );
-        // Don't throw - runtime change was successful, persistence failure is non-critical
-      }
+      setPendingConfigChanges((current) => ({
+        ...current,
+        [p]: { value: v },
+      }));
     }
   }
 
+  const requestClose = useCallback(async (): Promise<boolean> => {
+    if (savingConfigFile) return false;
+
+    const pendingCount = Object.keys(pendingConfigChanges).length;
+    if (pendingCount === 0) {
+      onClose?.();
+      return true;
+    }
+
+    const shouldSave = confirm(
+      `Machine config changed. Save ${pendingCount === 1 ? "this change" : "these changes"} to config.yaml?\n\n` +
+        "OK saves the config file. Cancel closes without updating config.yaml.",
+    );
+
+    if (shouldSave) {
+      setSavingConfigFile(true);
+      try {
+        await updateConfigYamlBatch(pendingConfigChanges);
+        setPendingConfigChanges({});
+      } catch (error) {
+        alert(
+          `Runtime settings were sent, but config.yaml could not be updated.\n\n${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return false;
+      } finally {
+        setSavingConfigFile(false);
+      }
+    } else {
+      setPendingConfigChanges({});
+    }
+
+    onClose?.();
+    return true;
+  }, [onClose, pendingConfigChanges, savingConfigFile]);
+
+  useEffect(() => {
+    onRequestCloseReady?.(() => {
+      requestClose();
+    });
+    return () => onRequestCloseReady?.(null);
+  }, [onRequestCloseReady, requestClose]);
+
   async function restart() {
     if (!confirm("Restart the device now?")) return;
+    const closed = await requestClose();
+    if (!closed) return;
     setRestarting(true);
     useMachineStore.getState().setRestarting(true);
-    onClose?.();
     // Expected: the controller tears down TCP mid-response, so fetch rejects.
     try {
       await sendCommand("[ESP444]RESTART");
@@ -1761,7 +1819,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <button
               className="p-1.5 rounded-md text-text-muted hover:text-text-primary
                          hover:bg-elevated transition-colors ml-1"
-              onClick={onClose}
+              onClick={() => requestClose()}
+              disabled={savingConfigFile}
               title="Close (Esc)"
             >
               <X size={18} />
@@ -1906,12 +1965,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     <span className="font-mono text-text-primary">
                       config.yaml
                     </span>
-                    . Changes are sent to the controller when supported and
-                    also update the{" "}
+                    . Changes are sent to the controller now. When you close
+                    Settings, you can choose whether to save them to{" "}
                     <span className="font-mono text-text-primary">
                       config.yaml
-                    </span>{" "}
-                    file. Restart FluidNC after homing, motion, or pin changes.
+                    </span>
+                    . Restart FluidNC after homing, motion, or pin changes.
                   </span>
                   <button
                     className="btn btn-primary ml-auto shrink-0 px-3 py-1.5 text-sm"
