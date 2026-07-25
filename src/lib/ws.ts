@@ -323,7 +323,7 @@ function closeCurrentSocket() {
 function startStatusPoll() {
   if (backgroundTrafficSuspensions > 0) return
   stopStatusPoll()
-  // During a local stream FluidUI disables FluidNC's 5 Hz auto-reporting and
+  // During a local stream FigUI disables FluidNC's 5 Hz auto-reporting and
   // becomes the sole status producer. A 4 Hz poll keeps the DRO, toolhead, and
   // Door/Hold detection responsive while staying below the controller's
   // 32-message queue during AsyncTCP's five-second acknowledgement window,

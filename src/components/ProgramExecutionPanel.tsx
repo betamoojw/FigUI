@@ -184,7 +184,7 @@ export function ProgramExecutionPanel({ isTablet, initiallyOpen = false, accordi
                 ) : (
                   <>
                     <p className="mt-1.5">
-                      When FluidNC reports an N block, that value is mapped directly to the loaded controller file. Otherwise, FluidUI estimates the nearest motion line from live XYZ position.
+                      When FluidNC reports an N block, that value is mapped directly to the loaded controller file. Otherwise, FigUI estimates the nearest motion line from live XYZ position.
                     </p>
                     <p className="mt-1.5">
                       The estimate cannot identify non-motion commands such as dwells, pauses, tool changes, spindle commands, or modal-only lines because they do not change the reported coordinates. Treat it as a visual aid, not an exact execution or restart position.

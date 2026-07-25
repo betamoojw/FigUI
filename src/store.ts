@@ -104,6 +104,13 @@ function getSettingNumber(settings: FluidNCSetting[], path: string): number | un
   return Number.isFinite(value) ? value : undefined
 }
 
+function getSpindleDelaySetting(settings: FluidNCSetting[], name: 'spinup_ms' | 'spindown_ms') {
+  const setting = settings.find(s => normalizeSettingPath(s.P).endsWith(`/${name}`))
+  if (!setting) return undefined
+  const value = Number.parseFloat(setting.V)
+  return Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
 function getSettingBoolean(settings: FluidNCSetting[], path: string): boolean | undefined {
   const normalized = normalizeSettingPath(path)
   const setting = settings.find(s => normalizeSettingPath(s.P) === normalized)
@@ -141,6 +148,10 @@ function getFluidNCAxisRange(settings: FluidNCSetting[], axis: 'x' | 'y' | 'z') 
 
 function deriveControllerSettingsFromFluidNCSettings(settings: FluidNCSetting[]): Partial<ControllerSettings> {
   const derived: Partial<ControllerSettings> = {}
+  const spinupMs = getSpindleDelaySetting(settings, 'spinup_ms')
+  const spindownMs = getSpindleDelaySetting(settings, 'spindown_ms')
+  if (spinupMs !== undefined) derived.spindleSpinupMs = spinupMs
+  if (spindownMs !== undefined) derived.spindleSpindownMs = spindownMs
 
   const xRange = getFluidNCAxisRange(settings, 'x')
   const yRange = getFluidNCAxisRange(settings, 'y')

@@ -6,7 +6,7 @@ import { useGCodeStore } from '../store/gcode'
 import { sendRaw, sendRealtime, STATUS_POLL_INTERVAL_MS } from '../lib/ws'
 import type { ControllerSettings, MachineStatus, Units } from '../types'
 import { displayToMm, feedUnitLabel, linearUnitLabel, mmToDisplay } from '../lib/units'
-import { buildJobTimingEstimate, distributeFixedDelays, formatRuntime, useJobRuntimeEstimate, type JobTimingEstimate } from '../lib/jobRuntime'
+import { buildJobTimingEstimate, formatRuntime, useJobRuntimeEstimate, type JobTimingEstimate } from '../lib/jobRuntime'
 import { createRenderer, renderLines, setStaticLineData, type WebGLRenderer, type Camera, type Vector3 } from '../lib/webgl'
 import { addSegmentToPath, clamp01, getArcGeometry, normalizeAngle } from '../lib/gcodeBuild'
 import { RestartFromLineDialog } from './RestartFromLineDialog'
@@ -773,45 +773,6 @@ function findNearbyProgress(
   return best ? { segmentIndex: best.segmentIndex, fraction: best.fraction } : null
 }
 
-function segmentXYLength(seg: Segment) {
-  if (seg.i !== undefined) {
-    const arc = getArcGeometry(seg)
-    return Math.hypot(arc.sweep * arc.r, seg.z1 - seg.z0)
-  }
-  return Math.hypot(seg.x1 - seg.x0, seg.y1 - seg.y0, seg.z1 - seg.z0)
-}
-
-function buildFallbackSimulationTiming(model: GCodeModel): JobTimingEstimate | null {
-  if (model.segments.length === 0) return null
-  const segmentSeconds = new Float64Array(model.segments.length)
-  let totalSeconds = 0
-
-  for (let i = 0; i < model.segments.length; i++) {
-    const seg = model.segments[i]
-    const length = segmentXYLength(seg)
-    if (length <= 1e-9) continue
-    const speedMmPerMin = seg.moveType === 'rapid'
-      ? 3000
-      : seg.feedMmPerMin && seg.feedMmPerMin > 0 ? seg.feedMmPerMin : 1000
-    const seconds = length / (speedMmPerMin / 60)
-    segmentSeconds[i] = seconds
-    totalSeconds += seconds
-  }
-
-  const delayBeforeSegmentSeconds = new Float64Array(model.segments.length)
-  const [trailingDelaySeconds, totalFixedSeconds] = distributeFixedDelays(model, delayBeforeSegmentSeconds)
-  totalSeconds += totalFixedSeconds
-
-  return totalSeconds > 0
-    ? {
-        segmentSeconds,
-        delayBeforeSegmentSeconds,
-        trailingDelaySeconds,
-        totalSeconds,
-      }
-    : null
-}
-
 function buildCumulativeSegmentTimes(timing: JobTimingEstimate) {
   const cumulative = new Float64Array(timing.segmentSeconds.length + 1)
   for (let i = 0; i < timing.segmentSeconds.length; i++) {
@@ -876,6 +837,14 @@ function getSegmentPoint(seg: Segment, fraction: number) {
     y: seg.y0 + (seg.y1 - seg.y0) * t,
     z: seg.z0 + (seg.z1 - seg.z0) * t,
   }
+}
+
+function segmentXYLength(seg: Segment) {
+  if (seg.i !== undefined && (seg.arcPlane ?? 17) === 17) {
+    const arc = getArcGeometry(seg)
+    return Math.hypot(arc.sweep * arc.r, seg.z1 - seg.z0)
+  }
+  return Math.hypot(seg.x1 - seg.x0, seg.y1 - seg.y0, seg.z1 - seg.z0)
 }
 
 function buildCumulativeXYLengths(segments: Segment[]) {
@@ -2137,7 +2106,10 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   }
 
   function getSimulationTiming(mdl: GCodeModel) {
-    return buildJobTimingEstimate(mdl, controllerSettings) ?? buildFallbackSimulationTiming(mdl)
+    return buildJobTimingEstimate(mdl, controllerSettings, {
+      feedPercent: status.feedOverride,
+      rapidPercent: status.rapidOverride,
+    })
   }
 
   function startSimulation() {

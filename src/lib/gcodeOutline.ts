@@ -62,7 +62,7 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
   const zApproachFeed = Math.min(feed, Z_APPROACH_FEED_MAX_MM_PER_MIN)
   const closedPath = closePath(path)
   const lines = [
-    '(FluidUI framing routine)',
+    '(FigUI framing routine)',
     `(${options.mode === 'rectangle' ? 'Rectangle' : 'Contour'} outline from cutting moves only)`,
     'G21 G90 G94',
     `G0 Z${format(options.travelZMm, 3)}`,

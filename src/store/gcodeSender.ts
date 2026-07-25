@@ -586,7 +586,7 @@ onSoftReset(() => {
 onSessionTaken(() => {
   if (!ownsExclusiveTraffic) return
   sendRealtimeNow(0x21)
-  finish('error', 'Another FluidUI page took control. The local stream was feed-held for safety.')
+  finish('error', 'Another FigUI page took control. The local stream was feed-held for safety.')
 })
 
 useMachineStore.subscribe((state, previous) => {

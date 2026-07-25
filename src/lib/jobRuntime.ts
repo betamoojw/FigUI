@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ControllerSettings, MachineStatus } from '../types'
 import type { GCodeModel, Segment } from './gcode'
-import { getArcGeometry } from './gcodeBuild'
 
 interface SegmentMotionProfile {
   lengthMm: number
   axisFractions: { x: number; y: number; z: number }
+  /** Axis acceleration per path-speed squared while following an arc. */
+  centripetalFactors?: { x: number; y: number; z: number }
 
   entryDir: { x: number; y: number; z: number }
   exitDir: { x: number; y: number; z: number }
@@ -15,6 +16,8 @@ export interface JobTimingEstimate {
   /** Motion time only; fixed delays are stored separately. */
   segmentSeconds: Float64Array
   delayBeforeSegmentSeconds: Float64Array
+  /** Start time of every segment, with the final entry including trailing waits. */
+  timelineSeconds: Float64Array
   trailingDelaySeconds: number
   totalSeconds: number
 }
@@ -52,6 +55,8 @@ function motionSettingsKey(settings: ControllerSettings) {
     settings.accelY ?? '',
     settings.accelZ ?? '',
     settings.junctionDeviation ?? '',
+    settings.spindleSpinupMs ?? '',
+    settings.spindleSpindownMs ?? '',
   ].join('|')
 }
 
@@ -92,51 +97,76 @@ function getSegmentMotionProfile(seg: Segment): SegmentMotionProfile | null {
     }
   }
 
-  const arc = getArcGeometry(seg)
-  const xyLength = arc.r * arc.sweep
-  const dz = seg.z1 - seg.z0
-  const lengthMm = Math.hypot(xyLength, dz)
+  const plane = seg.arcPlane ?? 17
+  const [u0, v0, u1, v1, w0, w1, offsetU, offsetV] = plane === 17
+    ? [seg.x0, seg.y0, seg.x1, seg.y1, seg.z0, seg.z1, seg.i ?? 0, seg.j ?? 0]
+    : plane === 18
+      ? [seg.x0, seg.z0, seg.x1, seg.z1, seg.y0, seg.y1, seg.i ?? 0, seg.k ?? 0]
+      : [seg.y0, seg.z0, seg.y1, seg.z1, seg.x0, seg.x1, seg.j ?? 0, seg.k ?? 0]
+  const r = Math.hypot(offsetU, offsetV)
+  if (r < 1e-9) return null
+  const cu = u0 + offsetU
+  const cv = v0 + offsetV
+  const startAngle = Math.atan2(v0 - cv, u0 - cu)
+  const endAngle = Math.atan2(v1 - cv, u1 - cu)
+  const fullCircle = Math.abs(u0 - u1) < 1e-4 && Math.abs(v0 - v1) < 1e-4
+  const sweep = seg.cw
+    ? ((startAngle - endAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)
+    : ((endAngle - startAngle) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)
+  const arcSweep = fullCircle ? Math.PI * 2 : sweep
+  const planeLength = r * arcSweep
+  const dw = w1 - w0
+  const lengthMm = Math.hypot(planeLength, dw)
   if (lengthMm < 1e-9) return null
 
   const dirSign = seg.cw ? -1 : 1
-  const startAngle = arc.startAngle
-  const endAngle = arc.startAngle + dirSign * arc.sweep
+  const terminalAngle = startAngle + dirSign * arcSweep
 
   const tangentAt = (angle: number) => ({
     x: seg.cw ? Math.sin(angle) : -Math.sin(angle),
     y: seg.cw ? -Math.cos(angle) : Math.cos(angle),
   })
 
-  const xyScale = xyLength / lengthMm
-  const zComponent = dz / lengthMm
+  const planeScale = planeLength / lengthMm
+  const normalComponent = dw / lengthMm
+
+  const mapAxes = (u: number, v: number, w: number) => plane === 17
+    ? { x: u, y: v, z: w }
+    : plane === 18
+      ? { x: u, y: w, z: v }
+      : { x: w, y: u, z: v }
 
   const buildDir = (angle: number) => {
     const t = tangentAt(angle)
-    return { x: t.x * xyScale, y: t.y * xyScale, z: zComponent }
+    return mapAxes(t.x * planeScale, t.y * planeScale, normalComponent)
   }
 
   // An arc's limiting axis can occur anywhere in its sweep. Sampling only the
   // midpoint makes an identical circle change speed when its start point is
   // rotated. Evaluate the endpoint tangents and every component extremum.
-  const candidates = [startAngle, endAngle, 0, Math.PI / 2, Math.PI, Math.PI * 1.5]
-    .filter(angle => angleFallsWithinSweep(angle, startAngle, arc.sweep, !!seg.cw))
-  let maxAbsX = 0
-  let maxAbsY = 0
+  const candidates = [startAngle, terminalAngle, 0, Math.PI / 2, Math.PI, Math.PI * 1.5]
+    .filter(angle => angleFallsWithinSweep(angle, startAngle, arcSweep, !!seg.cw))
+  let maxTangentU = 0
+  let maxTangentV = 0
+  let maxRadialU = 0
+  let maxRadialV = 0
   for (const angle of candidates) {
     const tangent = tangentAt(angle)
-    maxAbsX = Math.max(maxAbsX, Math.abs(tangent.x))
-    maxAbsY = Math.max(maxAbsY, Math.abs(tangent.y))
+    maxTangentU = Math.max(maxTangentU, Math.abs(tangent.x))
+    maxTangentV = Math.max(maxTangentV, Math.abs(tangent.y))
+    maxRadialU = Math.max(maxRadialU, Math.abs(Math.cos(angle)))
+    maxRadialV = Math.max(maxRadialV, Math.abs(Math.sin(angle)))
   }
 
   return {
     lengthMm,
-    axisFractions: {
-      x: maxAbsX * xyScale,
-      y: maxAbsY * xyScale,
-      z: Math.abs(zComponent),
-    },
+    axisFractions: mapAxes(maxTangentU * planeScale, maxTangentV * planeScale, Math.abs(normalComponent)),
+    // At path speed v, a helical arc needs v² * xyScale² / r of normal
+    // acceleration. This small constraint prevents impossible tiny-radius arcs
+    // from being timed as if they were straight lines.
+    centripetalFactors: mapAxes(maxRadialU * planeScale * planeScale / r, maxRadialV * planeScale * planeScale / r, 0),
     entryDir: buildDir(startAngle),
-    exitDir: buildDir(endAngle),
+    exitDir: buildDir(terminalAngle),
   }
 }
 
@@ -219,8 +249,11 @@ function computeJunctionSpeed(
   if (cosTheta >= 0.999999) return Number.POSITIVE_INFINITY // colinear
   if (cosTheta <= -0.999999) return 0 // reversal
 
-  const sinHalf = Math.sqrt((1 - cosTheta) / 2)
-  if (sinHalf >= 0.999999) return 0
+  // GRBL's junction-deviation derivation uses the supplementary angle between
+  // consecutive path vectors. A nearly straight path must therefore approach
+  // one here (and have no junction cap), while a reversal approaches zero.
+  const sinHalf = Math.sqrt((1 + cosTheta) / 2)
+  if (sinHalf >= 0.999999) return Number.POSITIVE_INFINITY
   const vSquared = (accel * junctionDeviationMm * sinHalf) / (1 - sinHalf)
   return Math.sqrt(Math.max(0, vSquared)) * 60 // convert mm/s back to mm/min
 }
@@ -233,12 +266,21 @@ interface PlannedSegment {
   vExit: number 
 }
 
-export function distributeFixedDelays(model: GCodeModel, target: Float64Array) {
+export function distributeFixedDelays(model: GCodeModel, target: Float64Array, settings?: ControllerSettings) {
   let trailing = 0
   let total = 0
   let segmentIndex = 0
-  for (const [sourceLine, seconds] of model.fixedDelays ?? []) {
+  const delays = [...(model.fixedDelays ?? [])]
+  const spinupSeconds = (settings?.spindleSpinupMs ?? 0) / 1000
+  const spindownSeconds = (settings?.spindleSpindownMs ?? 0) / 1000
+  for (const [sourceLine, state] of model.spindleTransitions ?? []) {
+    const seconds = state === 'on' ? spinupSeconds : spindownSeconds
+    if (Number.isFinite(seconds) && seconds > 0) delays.push([sourceLine, seconds])
+  }
+  delays.sort((a, b) => a[0] - b[0])
+  for (const [sourceLine, seconds] of delays) {
     if (!Number.isFinite(seconds) || seconds <= 0) continue
+    if (model.timingEndLine != null && sourceLine > model.timingEndLine) continue
     while (segmentIndex < model.segments.length
       && model.segments[segmentIndex].sourceLine < sourceLine) segmentIndex++
     if (segmentIndex < model.segments.length) target[segmentIndex] += seconds
@@ -246,6 +288,27 @@ export function distributeFixedDelays(model: GCodeModel, target: Float64Array) {
     total += seconds
   }
   return [trailing, total] as const
+}
+
+function getStopsBeforeSegments(model: GCodeModel, settings: ControllerSettings) {
+  const stops = new Uint8Array(model.segments.length)
+  let segmentIndex = 0
+  const delays = [...(model.fixedDelays ?? [])]
+  const spinupSeconds = (settings.spindleSpinupMs ?? 0) / 1000
+  const spindownSeconds = (settings.spindleSpindownMs ?? 0) / 1000
+  for (const [sourceLine, state] of model.spindleTransitions ?? []) {
+    const seconds = state === 'on' ? spinupSeconds : spindownSeconds
+    if (Number.isFinite(seconds) && seconds > 0) delays.push([sourceLine, seconds])
+  }
+  delays.sort((a, b) => a[0] - b[0])
+  for (const [sourceLine, seconds] of delays) {
+    if (!Number.isFinite(seconds) || seconds <= 0) continue
+    if (model.timingEndLine != null && sourceLine > model.timingEndLine) continue
+    while (segmentIndex < model.segments.length
+      && model.segments[segmentIndex].sourceLine < sourceLine) segmentIndex++
+    if (segmentIndex < stops.length) stops[segmentIndex] = 1
+  }
+  return stops
 }
 
 export function buildJobTimingEstimate(
@@ -270,8 +333,14 @@ export function buildJobTimingEstimate(
     : 0.01 // GRBL default ($11)
 
   const planned: (PlannedSegment | null)[] = new Array(model.segments.length)
+  const stopsBefore = getStopsBeforeSegments(model, settings)
   for (let i = 0; i < model.segments.length; i++) {
     const seg = model.segments[i]
+    if (model.timingEndLine != null && seg.sourceLine > model.timingEndLine) {
+      planned[i] = null
+      continue
+    }
+    if (seg.timingUnknown) return null
     const profile = getSegmentMotionProfile(seg)
     if (!profile) {
       planned[i] = null
@@ -293,8 +362,18 @@ export function buildJobTimingEstimate(
     const isRapid = seg.moveType === 'rapid'
     const programmedSpeed = isRapid
       ? maxSpeed * rapidScale
-      : (seg.feedMmPerMin ?? maxSpeed) * feedScale
-    const vMax = Math.min(programmedSpeed, maxSpeed)
+      : (seg.inverseTimeSeconds != null
+          ? profile.lengthMm * 60 / seg.inverseTimeSeconds
+          : (seg.feedMmPerMin ?? maxSpeed)) * feedScale
+    const curveSpeedMmS = profile.centripetalFactors
+      ? Math.sqrt(getAxisLimitedValue(
+          profile.centripetalFactors,
+          settings.accelX,
+          settings.accelY,
+          settings.accelZ,
+        ))
+      : Number.POSITIVE_INFINITY
+    const vMax = Math.min(programmedSpeed, maxSpeed, curveSpeedMmS * 60)
 
     if (!Number.isFinite(vMax) || vMax <= 0) {
       planned[i] = null
@@ -336,9 +415,9 @@ export function buildJobTimingEstimate(
       const vEntryMaxMmS = Math.sqrt(vExitMmS * vExitMmS + 2 * cur.accel * cur.profile.lengthMm)
       vEntryMax = Math.min(cur.vMax, vEntryMaxMmS * 60)
     }
-    cur.vEntry = vEntryMax
+    cur.vEntry = stopsBefore[i] ? 0 : vEntryMax
 
-    nextEntrySpeed = vEntryMax
+    nextEntrySpeed = cur.vEntry
     nextEntryDir = cur.profile.entryDir
   }
 
@@ -389,12 +468,19 @@ export function buildJobTimingEstimate(
   if (!hasEstimate || totalSeconds <= 0) return null
 
   const delayBeforeSegmentSeconds = new Float64Array(model.segments.length)
-  const [trailingDelaySeconds, totalFixedSeconds] = distributeFixedDelays(model, delayBeforeSegmentSeconds)
+  const [trailingDelaySeconds, totalFixedSeconds] = distributeFixedDelays(model, delayBeforeSegmentSeconds, settings)
   totalSeconds += totalFixedSeconds
 
+  const timelineSeconds = new Float64Array(model.segments.length + 1)
+  for (let i = 0; i < model.segments.length; i++) {
+    timelineSeconds[i + 1] = timelineSeconds[i]
+      + delayBeforeSegmentSeconds[i]
+      + segmentSeconds[i]
+  }
   const estimate = {
     segmentSeconds,
     delayBeforeSegmentSeconds,
+    timelineSeconds,
     trailingDelaySeconds,
     totalSeconds,
   }
@@ -433,6 +519,68 @@ export function formatRuntime(seconds: number | null) {
   return hours > 0
     ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
     : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+interface TimelinePosition {
+  overriddenElapsedSeconds: number
+  nominalSecondsPerActualSecond: number
+}
+
+/**
+ * Map a point on the nominal timeline to the same point on an overridden
+ * timeline. Delays map one-to-one; a motion block maps by its local fraction.
+ * This avoids treating a feed override as a whole-job average.
+ */
+function getTimelinePosition(
+  nominal: JobTimingEstimate,
+  overridden: JobTimingEstimate,
+  nominalElapsedSeconds: number,
+): TimelinePosition {
+  const nominalElapsed = Math.max(0, Math.min(nominalElapsedSeconds, nominal.totalSeconds))
+  const segmentCount = nominal.segmentSeconds.length
+
+  if (nominalElapsed >= nominal.timelineSeconds[segmentCount]) {
+    const trailingElapsed = nominalElapsed - nominal.timelineSeconds[segmentCount]
+    return {
+      overriddenElapsedSeconds: Math.min(overridden.totalSeconds, overridden.timelineSeconds[segmentCount] + trailingElapsed),
+      nominalSecondsPerActualSecond: 1,
+    }
+  }
+
+  let low = 0
+  let high = segmentCount - 1
+  while (low < high) {
+    const mid = (low + high) >>> 1
+    if (nominal.timelineSeconds[mid + 1] <= nominalElapsed) low = mid + 1
+    else high = mid
+  }
+
+  const index = low
+  const offset = nominalElapsed - nominal.timelineSeconds[index]
+  const nominalDelay = nominal.delayBeforeSegmentSeconds[index]
+  if (offset <= nominalDelay) {
+    return {
+      overriddenElapsedSeconds: overridden.timelineSeconds[index] + offset,
+      nominalSecondsPerActualSecond: 1,
+    }
+  }
+
+  const nominalMotion = nominal.segmentSeconds[index]
+  const overriddenMotion = overridden.segmentSeconds[index]
+  const motionElapsed = offset - nominalDelay
+  if (nominalMotion <= 1e-9 || overriddenMotion <= 1e-9) {
+    return {
+      overriddenElapsedSeconds: overridden.timelineSeconds[index] + overridden.delayBeforeSegmentSeconds[index],
+      nominalSecondsPerActualSecond: 1,
+    }
+  }
+
+  return {
+    overriddenElapsedSeconds: overridden.timelineSeconds[index]
+      + overridden.delayBeforeSegmentSeconds[index]
+      + motionElapsed * overriddenMotion / nominalMotion,
+    nominalSecondsPerActualSecond: nominalMotion / overriddenMotion,
+  }
 }
 
 export function useJobRuntimeEstimate(
@@ -477,21 +625,18 @@ export function useJobRuntimeEstimate(
     [matchesJob, model, controllerSettings, status.feedOverride, status.rapidOverride],
   )
 
-  const overallScale = useMemo(() => {
+  const scaleAtNominalTime = (nominalElapsedSeconds: number) => {
     if (!timingEstimate || timingEstimate.totalSeconds <= 0
       || !overriddenTimingEstimate || overriddenTimingEstimate.totalSeconds <= 0) {
       return getOverrideScale(status.feedOverride)
     }
-    // Replanning at the overridden speed preserves acceleration limits and
-    // leaves fixed delays untouched. This ratio maps wall time onto the
-    // nominal timeline used by the existing run/hold integration.
-    return timingEstimate.totalSeconds / overriddenTimingEstimate.totalSeconds
-  }, [timingEstimate, overriddenTimingEstimate, status.feedOverride])
+    return getTimelinePosition(timingEstimate, overriddenTimingEstimate, nominalElapsedSeconds)
+      .nominalSecondsPerActualSecond
+  }
 
-  const integrateUpTo = (nowMs: number, newScale: number) => {
+  const integrateUpTo = (nowMs: number) => {
     if (lastSampleMsRef.current === null) {
       lastSampleMsRef.current = nowMs
-      lastSampleScaleRef.current = newScale
       return
     }
     const dtMs = nowMs - lastSampleMsRef.current
@@ -499,7 +644,6 @@ export function useJobRuntimeEstimate(
       nominalCompletedSecRef.current += (dtMs / 1000) * lastSampleScaleRef.current
     }
     lastSampleMsRef.current = nowMs
-    lastSampleScaleRef.current = newScale
   }
 
   useEffect(() => {
@@ -520,7 +664,7 @@ export function useJobRuntimeEstimate(
       nominalCompletedSecRef.current = 0
       activeRunStartedAtRef.current = status.state === 'Run' ? now : null
       lastSampleMsRef.current = status.state === 'Run' ? now : null
-      lastSampleScaleRef.current = overallScale
+      lastSampleScaleRef.current = scaleAtNominalTime(0)
       return
     }
 
@@ -528,36 +672,35 @@ export function useJobRuntimeEstimate(
       if (activeRunStartedAtRef.current === null) {
         activeRunStartedAtRef.current = now
         lastSampleMsRef.current = now
-        lastSampleScaleRef.current = overallScale
+        lastSampleScaleRef.current = scaleAtNominalTime(nominalCompletedSecRef.current)
+      } else {
+        // Integrate using the previous override first, then use the new one
+        // from this exact point in the job onward.
+        integrateUpTo(now)
+        lastSampleScaleRef.current = scaleAtNominalTime(nominalCompletedSecRef.current)
       }
     } else if (activeRunStartedAtRef.current !== null) {
 
       accumulatedRunMsRef.current += now - activeRunStartedAtRef.current
-      integrateUpTo(now, overallScale)
+      integrateUpTo(now)
       activeRunStartedAtRef.current = null
       lastSampleMsRef.current = null
     }
-  }, [jobKey, status.state, overallScale])
-
- 
-  useEffect(() => {
-    if (!jobKey || status.state !== 'Run') return
-    integrateUpTo(Date.now(), overallScale)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overallScale])
+  }, [jobKey, status.state, timingEstimate, overriddenTimingEstimate, status.feedOverride, status.rapidOverride])
 
   useEffect(() => {
     if (!jobKey || status.state !== 'Run') return
 
     const timer = window.setInterval(() => {
       const now = Date.now()
-      integrateUpTo(now, overallScale)
+      integrateUpTo(now)
+      lastSampleScaleRef.current = scaleAtNominalTime(nominalCompletedSecRef.current)
       setClockNowMs(now)
     }, 250)
 
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobKey, status.state, overallScale])
+  }, [jobKey, status.state, timingEstimate, overriddenTimingEstimate, status.feedOverride, status.rapidOverride])
 
   if (!isJobActive) {
     return { source: 'none', progressPercent: null, elapsedSeconds: null, remainingSeconds: null, totalSeconds: null }
@@ -584,10 +727,13 @@ export function useJobRuntimeEstimate(
   const sinceLastSampleMs = (lastSampleMsRef.current !== null && status.state === 'Run')
     ? Math.max(0, clockNowMs - lastSampleMsRef.current)
     : 0
-  const nominalCompletedSec = nominalCompletedSecRef.current + (sinceLastSampleMs / 1000) * overallScale
-  const remainingNominalSec = Math.max(0, timingEstimate.totalSeconds - nominalCompletedSec)
-
-  const remainingSeconds = overallScale > 0 ? remainingNominalSec / overallScale : remainingNominalSec
+  const nominalCompletedSec = nominalCompletedSecRef.current
+    + (sinceLastSampleMs / 1000) * lastSampleScaleRef.current
+  const timelinePosition = overriddenTimingEstimate
+    ? getTimelinePosition(timingEstimate, overriddenTimingEstimate, nominalCompletedSec)
+    : { overriddenElapsedSeconds: nominalCompletedSec, nominalSecondsPerActualSecond: 1 }
+  const remainingSeconds = Math.max(0, (overriddenTimingEstimate?.totalSeconds ?? timingEstimate.totalSeconds)
+    - timelinePosition.overriddenElapsedSeconds)
   const totalSeconds = elapsedSeconds + remainingSeconds
 
   const progressPercent = timingEstimate.totalSeconds > 0

@@ -12,9 +12,15 @@ export interface Segment {
    */
   moveType: 'rapid' | 'feed' | 'traverse'
   feedMmPerMin?: number
+  /** G93 inverse-time duration for this move, before the feed override. */
+  inverseTimeSeconds?: number
+  /** Motion has no determinable feed rate (for example G95 without RPM). */
+  timingUnknown?: boolean
   tool?: number
   /** For arcs: center offsets (relative to start). undefined for lines. */
   i?: number; j?: number; k?: number
+  /** Active plane for an arc; omitted for the usual G17 XY plane. */
+  arcPlane?: 17 | 18 | 19
   /** true = clockwise arc (G2) */
   cw?: boolean
 }
@@ -32,6 +38,10 @@ export interface GCodeModel {
   totalLines: number
   /** Fixed controller waits that can be included in a runtime estimate. */
   fixedDelays?: Array<[sourceLine: number, seconds: number]>
+  /** Spindle state changes; their configured controller delays are timed later. */
+  spindleTransitions?: Array<[sourceLine: number, state: 'on' | 'off']>
+  /** First M2/M30 source line; program content after it will not execute. */
+  timingEndLine?: number
 }
 
 export type WorkCoordinateSystem = 'G54' | 'G55' | 'G56' | 'G57' | 'G58' | 'G59' | 'G59.1' | 'G59.2' | 'G59.3'
@@ -136,11 +146,16 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
   let spindleOn = false        // Track spindle state
   let spindleEverOn = false    // Whether spindle was ever activated (false = no spindle machine e.g. pen plotter)
   let feedMmPerMin = 0
+  let feedMmPerRev = 0
+  let spindleRpm: number | null = null
+  let feedRateMode: 93 | 94 | 95 = 94
   let pendingTool: number | null = null
   let activeTool: number | null = null
   let sawToolChange = false
   const tools = new Map<number, GCodeTool>()
   const fixedDelays: Array<[number, number]> = []
+  const spindleTransitions: Array<[number, 'on' | 'off']> = []
+  let timingEndLine: number | undefined
   const bounds = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity }
 
   function getMoveType(): 'rapid' | 'feed' | 'traverse' {
@@ -196,8 +211,14 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
 
     // Process M codes (spindle control)
     for (const mc of mCodes) {
-      if (mc === 3 || mc === 4) { spindleOn = true; spindleEverOn = true }  // M3/M4 = spindle on
-      else if (mc === 5) { spindleOn = false }        // M5 = spindle off
+      if (mc === 3 || mc === 4) {
+        if (!spindleOn) spindleTransitions.push([sourceLine, 'on'])
+        spindleOn = true; spindleEverOn = true
+      }  // M3/M4 = spindle on
+      else if (mc === 5) {
+        if (spindleOn) spindleTransitions.push([sourceLine, 'off'])
+        spindleOn = false
+      }        // M5 = spindle off
       else if (mc === 6 && pendingTool != null) {
         activeTool = pendingTool
         sawToolChange = true
@@ -215,6 +236,10 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
       if (g === 91) { incremental = true; continue }
       if (g === 20) { inchMode = true; continue }
       if (g === 21) { inchMode = false; continue }
+      if (g === 93 || g === 94 || g === 95) {
+        feedRateMode = g
+        continue
+      }
       if (g === 17 || g === 18 || g === 19) { plane = g; continue }
       const nextWcs = wcsFromGValue(g)
       if (nextWcs) {
@@ -232,17 +257,23 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
       for (const key of ['X', 'Y', 'Z', 'I', 'J', 'K', 'R'] as const) {
         if (key in words) words[key] *= 25.4
       }
-      if (Number.isFinite(words.F)) words.F *= 25.4
+      if (feedRateMode !== 93 && Number.isFinite(words.F)) words.F *= 25.4
     }
 
     if (Number.isFinite(words.F) && words.F > 0) {
-      feedMmPerMin = words.F
+      if (feedRateMode === 95) feedMmPerRev = words.F
+      else feedMmPerMin = words.F
     }
+    if (Number.isFinite(words.S) && words.S >= 0) spindleRpm = words.S
 
     if (gCodes.includes(4)) {
       if (Number.isFinite(words.P) && words.P >= 0) {
         fixedDelays.push([sourceLine, words.P])
       }
+    }
+
+    if (mCodes.some(code => code === 2 || code === 30) && timingEndLine == null) {
+      timingEndLine = sourceLine
     }
 
     // G92 – set coordinate offset
@@ -254,26 +285,18 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
     }
 
     if (gCodes.includes(28)) {
-      const x0 = x, y0 = y, z0 = z
-      if ('X' in words || 'Y' in words || 'Z' in words) {
-        x = (words.X ?? (x - wcsShift.x - offX)) + offX + wcsShift.x
-        y = (words.Y ?? (y - wcsShift.y - offY)) + offY + wcsShift.y
-        z = (words.Z ?? (z - wcsShift.z - offZ)) + offZ + wcsShift.z
-        expandBounds(x0, y0, z0)
-        expandBounds(x, y, z)
-        segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType: 'rapid', sourceLine })
-      }
-      const xi = x, yi = y, zi = z
-      x = 0; y = 0; z = 0
-      expandBounds(xi, yi, zi)
-      expandBounds(x, y, z)
-      segments.push({ x0: xi, y0: yi, z0: zi, x1: x, y1: y, z1: z, moveType: 'rapid', sourceLine })
+      // Reference-return distance depends on the current machine position and
+      // configured G28 point. It is omitted from the best-effort estimate.
       continue
     }
 
     const hasMove = 'X' in words || 'Y' in words || 'Z' in words
-    const xyPlane = plane === 17
-    const isArc = xyPlane && (gCodes.includes(2) || gCodes.includes(3) || (arcMode > 0 && hasMove && ('I' in words || 'J' in words || 'R' in words)))
+    const hasArcCenter = plane === 17
+      ? ('I' in words || 'J' in words || 'R' in words)
+      : plane === 18
+        ? ('I' in words || 'K' in words || 'R' in words)
+        : ('J' in words || 'K' in words || 'R' in words)
+    const isArc = gCodes.includes(2) || gCodes.includes(3) || (arcMode > 0 && hasMove && hasArcCenter)
 
     if (hasMove || isArc) {
       const x0 = x, y0 = y, z0 = z
@@ -292,24 +315,38 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
       expandBounds(x, y, z)
 
       const moveType = getMoveType()
-      const feedData = moveType === 'rapid' || feedMmPerMin <= 0 ? {} : { feedMmPerMin }
+      const feedData = moveType === 'rapid'
+        ? {}
+        : feedRateMode === 93 && Number.isFinite(words.F) && words.F > 0
+          ? { inverseTimeSeconds: 60 / words.F }
+          : feedRateMode === 95
+            ? feedMmPerRev > 0 && spindleRpm != null && spindleRpm > 0
+              ? { feedMmPerMin: feedMmPerRev * spindleRpm }
+              : { timingUnknown: true }
+          : feedMmPerMin > 0 ? { feedMmPerMin } : {}
       const toolData = activeTool == null ? {} : { tool: activeTool }
 
       if (isArc) {
         const cw = gCodes.includes(2) || (!gCodes.includes(3) && arcMode === 2)
         let i: number, j: number, k: number = 0
         if ('R' in words) {
-          // R-format arc: compute I/J from radius
+          // R-format arc: compute offsets in the active plane.
           const R = words.R
-          const dx = x - x0, dy = y - y0
-          const d = Math.sqrt(dx * dx + dy * dy)
+          const [u0, v0, u1, v1] = plane === 17
+            ? [x0, y0, x, y]
+            : plane === 18 ? [x0, z0, x, z] : [y0, z0, y, z]
+          const du = u1 - u0, dv = v1 - v0
+          const d = Math.hypot(du, dv)
           if (d > 0) {
             const h = Math.sqrt(Math.max(0, R * R - (d * d) / 4))
             const sign = ((R > 0) !== cw) ? 1 : -1
-            i = dx / 2 + sign * h * (-dy / d)
-            j = dy / 2 + sign * h * (dx / d)
+            const offsetU = du / 2 + sign * h * (-dv / d)
+            const offsetV = dv / 2 + sign * h * (du / d)
+            if (plane === 17) { i = offsetU; j = offsetV; k = 0 }
+            else if (plane === 18) { i = offsetU; j = 0; k = offsetV }
+            else { i = 0; j = offsetU; k = offsetV }
           } else {
-            i = 0; j = 0
+            i = 0; j = 0; k = 0
           }
         } else {
           i = words.I ?? 0
@@ -320,16 +357,31 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
         // Skip arcs with zero radius (degenerate)
         const r = Math.sqrt(i * i + j * j + k * k)
         if (r > 1e-6) {
-          // Expand bounds to include only the cardinal extremes (0deg/90deg/180deg/270deg)
-          // that actually fall within the arc's angular sweep.
-          const cx = x0 + i, cy = y0 + j
           const isFullCircle = Math.abs(x0 - x) < 1e-4 && Math.abs(y0 - y) < 1e-4
           if (isFullCircle) {
-            expandBounds(cx + r, cy, z0)
-            expandBounds(cx - r, cy, z0)
-            expandBounds(cx, cy + r, z0)
-            expandBounds(cx, cy - r, z0)
-          } else {
+            if (plane === 17) {
+              const cx = x0 + i, cy = y0 + j
+              expandBounds(cx + r, cy, z0)
+              expandBounds(cx - r, cy, z0)
+              expandBounds(cx, cy + r, z0)
+              expandBounds(cx, cy - r, z0)
+            } else if (plane === 18) {
+              const cx = x0 + i, cz = z0 + k
+              expandBounds(cx + r, y0, cz)
+              expandBounds(cx - r, y0, cz)
+              expandBounds(cx, y0, cz + r)
+              expandBounds(cx, y0, cz - r)
+            } else {
+              const cy = y0 + j, cz = z0 + k
+              expandBounds(x0, cy + r, cz)
+              expandBounds(x0, cy - r, cz)
+              expandBounds(x0, cy, cz + r)
+              expandBounds(x0, cy, cz - r)
+            }
+          } else if (plane === 17) {
+            // Expand G17 bounds to include cardinal extrema that fall within
+            // the arc's sweep. Other planes retain endpoint bounds here.
+            const cx = x0 + i, cy = y0 + j
             const sa = Math.atan2(y0 - cy, x0 - cx)
             const ea = Math.atan2(y - cy, x - cx)
             const TAU = Math.PI * 2
@@ -346,7 +398,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
               }
             }
           }
-          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, sourceLine, ...feedData, ...toolData })
+          segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, i, j, k, cw, sourceLine, ...(plane === 17 ? {} : { arcPlane: plane as 18 | 19 }), ...feedData, ...toolData })
         } else {
           // Treat degenerate arc as a line
           segments.push({ x0, y0, z0, x1: x, y1: y, z1: z, moveType, sourceLine, ...feedData, ...toolData })
@@ -369,5 +421,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
     bounds,
     totalLines: lines.length,
     fixedDelays,
+    spindleTransitions,
+    timingEndLine,
   }
 }
