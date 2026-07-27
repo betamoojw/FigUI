@@ -1,5 +1,7 @@
 import type { GCodeModel, Segment } from './gcode'
 import { getArcGeometry } from './gcodeBuild'
+import { linearUnitLabel, mmToDisplay } from './units'
+import type { Units } from '../types'
 
 export type FramingMode = 'rectangle' | 'contour'
 
@@ -8,6 +10,7 @@ export interface FramingOptions {
   feedMmPerMin: number
   clearanceMm: number
   travelZMm: number
+  displayUnits?: Units
 }
 
 interface Point {
@@ -50,11 +53,14 @@ export function buildFramingGCode(model: GCodeModel, options: FramingOptions): s
   const frameZ = envelope.topZ + options.clearanceMm
   if (!Number.isFinite(options.travelZMm)) throw new Error('Safe travel height must be valid.')
   if (options.travelZMm < frameZ) {
+    const units = options.displayUnits ?? 'mm'
+    const unit = linearUnitLabel(units)
+    const shown = (mm: number) => format(mmToDisplay(mm, units), units === 'in' ? 4 : 3)
     const detail = Math.abs(envelope.topZ) <= Z_ZERO_TOLERANCE_MM
-      ? `Safe travel height must be at least the ${format(options.clearanceMm, 3)} mm clearance from top.`
-      : `Required height is estimated stock top Z${format(envelope.topZ, 3)} mm plus ${format(options.clearanceMm, 3)} mm clearance from top.`
+      ? `Safe travel height must be at least the ${shown(options.clearanceMm)} ${unit} clearance from top.`
+      : `Required height is estimated stock top Z${shown(envelope.topZ)} ${unit} plus ${shown(options.clearanceMm)} ${unit} clearance from top.`
     throw new Error(
-      `Safe travel height must be at least ${format(frameZ, 3)} mm. `
+      `Safe travel height must be at least ${shown(frameZ)} ${unit}. `
       + detail,
     )
   }

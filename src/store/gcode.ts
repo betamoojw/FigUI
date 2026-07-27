@@ -8,6 +8,7 @@ import {
 } from '../lib/gcode'
 import { useMachineStore } from '../store'
 import { getBase, sendCommand } from '../lib/http'
+import { MM_PER_INCH } from '../lib/units'
 import { sendRaw } from '../lib/ws'
 import {
   buildStatic2DPathsAsync,
@@ -104,7 +105,10 @@ function normalizeWcs(value: string | undefined): WorkCoordinateSystem | undefin
     : undefined
 }
 
-function parseWorkOffsetResponse(text: string): Partial<Record<WorkCoordinateSystem, WorkOffset>> {
+function parseWorkOffsetResponse(
+  text: string,
+  linearScale = 1,
+): Partial<Record<WorkCoordinateSystem, WorkOffset>> {
   const offsets: Partial<Record<WorkCoordinateSystem, WorkOffset>> = {}
   const numberPattern = '(-?(?:\\d+\\.?\\d*|\\.\\d+))'
   const offsetPattern = new RegExp(`^\\[(G5[4-9](?:\\.[1-3])?):${numberPattern},${numberPattern},${numberPattern}(?:,[^\\]]*)?\\]$`)
@@ -113,9 +117,9 @@ function parseWorkOffsetResponse(text: string): Partial<Record<WorkCoordinateSys
     const wcs = normalizeWcs(match?.[1])
     if (!match || !wcs) continue
     offsets[wcs] = {
-      x: Number.parseFloat(match[2]),
-      y: Number.parseFloat(match[3]),
-      z: Number.parseFloat(match[4]),
+      x: Number.parseFloat(match[2]) * linearScale,
+      y: Number.parseFloat(match[3]) * linearScale,
+      z: Number.parseFloat(match[4]) * linearScale,
     }
   }
   return offsets
@@ -133,7 +137,8 @@ async function getParseOptions(): Promise<ParseGCodeOptions> {
 
   if (machine.connected) {
     try {
-      Object.assign(workOffsets, parseWorkOffsetResponse(await sendCommand('$#')))
+      const linearScale = machine.controllerSettings.reportInches ? MM_PER_INCH : 1
+      Object.assign(workOffsets, parseWorkOffsetResponse(await sendCommand('$#'), linearScale))
       if (activeWcs) {
         workOffsets[activeWcs] = currentWco
       }

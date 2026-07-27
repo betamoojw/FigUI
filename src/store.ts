@@ -148,6 +148,10 @@ function getFluidNCAxisRange(settings: FluidNCSetting[], axis: 'x' | 'y' | 'z') 
 
 function deriveControllerSettingsFromFluidNCSettings(settings: FluidNCSetting[]): Partial<ControllerSettings> {
   const derived: Partial<ControllerSettings> = {}
+  const reportInches = getSettingBoolean(settings, 'report_inches')
+    ?? getSettingBoolean(settings, 'report/inches')
+  if (reportInches !== undefined) derived.reportInches = reportInches
+
   const spinupMs = getSpindleDelaySetting(settings, 'spinup_ms')
   const spindownMs = getSpindleDelaySetting(settings, 'spindown_ms')
   if (spinupMs !== undefined) derived.spindleSpinupMs = spinupMs

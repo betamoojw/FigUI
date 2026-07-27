@@ -3,6 +3,9 @@ import { AlertTriangle, ArrowRight, FileCode2, ShieldCheck, X } from 'lucide-rea
 import { analyzeRestart, buildRestartProgram, makeRestartFilename } from '../lib/gcodeRestart'
 import { saveFileContent } from '../lib/http'
 import { useGCodeStore } from '../store/gcode'
+import { useMachineStore } from '../store'
+import { displayToMm, feedUnitLabel, linearUnitLabel, mmToDisplay } from '../lib/units'
+import type { Units } from '../types'
 
 interface Props {
   sourceText: string
@@ -30,9 +33,23 @@ function controllerFilesystem(path: string): 'sd' | 'local' {
   return /^\/sd(?:\/|$)/i.test(path) ? 'sd' : 'local'
 }
 
-function fmt(value: number | null, suffix = '') {
-  if (value == null || !Number.isFinite(value)) return '—'
-  return `${Number(value.toFixed(3))}${suffix}`
+function fmtLinear(mmValue: number | null, units: Units) {
+  if (mmValue == null || !Number.isFinite(mmValue)) return '—'
+  const display = mmToDisplay(mmValue, units)
+  return String(Number(display.toFixed(units === 'in' ? 4 : 3)))
+}
+
+function defaultClearanceText(units: Units) {
+  return units === 'in' ? '0.1' : '2'
+}
+
+function defaultApproachFeedText(units: Units) {
+  return units === 'in' ? '4' : '100'
+}
+
+function safeZTextFromMm(mmValue: number | null, units: Units) {
+  if (mmValue == null || !Number.isFinite(mmValue)) return ''
+  return String(Number(mmToDisplay(mmValue, units).toFixed(units === 'in' ? 4 : 3)))
 }
 
 function numericInput(value: string) {
@@ -53,6 +70,7 @@ export function RestartFromLineDialog({
   const gutterRef = useRef<HTMLDivElement>(null)
   const lineHighlightRef = useRef<HTMLDivElement>(null)
   const loadFromText = useGCodeStore(s => s.loadFromText)
+  const units = useMachineStore(s => s.units)
   const program = useMemo(() => {
     const text = sourceText.replace(/\r\n?/g, '\n')
     const starts = [0]
@@ -72,9 +90,9 @@ export function RestartFromLineDialog({
   const [lineText, setLineText] = useState(initialSelectedLine == null ? '' : String(initialSelectedLine))
   const [selectedLine, setSelectedLine] = useState<number | null>(initialSelectedLine)
   const [analyzedLine, setAnalyzedLine] = useState<number | null>(initialSelectedLine)
-  const [safeZText, setSafeZText] = useState(defaultSafeMachineZMm == null ? '' : String(Number(defaultSafeMachineZMm.toFixed(3))))
-  const [clearanceText, setClearanceText] = useState('2')
-  const [approachFeedText, setApproachFeedText] = useState('100')
+  const [safeZText, setSafeZText] = useState(() => safeZTextFromMm(defaultSafeMachineZMm, units))
+  const [clearanceText, setClearanceText] = useState(() => defaultClearanceText(units))
+  const [approachFeedText, setApproachFeedText] = useState(() => defaultApproachFeedText(units))
   const [preparing, setPreparing] = useState(false)
   const [error, setError] = useState('')
 
@@ -151,9 +169,9 @@ export function RestartFromLineDialog({
       const generated = buildRestartProgram(sourceText, analysis, {
         sourceName,
         sourcePath: sourcePath ?? `local:${sourceName}`,
-        safeMachineZMm: safeZ,
-        clearanceMm: clearance,
-        approachFeedMmPerMin: approachFeed,
+        safeMachineZMm: displayToMm(safeZ, units),
+        clearanceMm: displayToMm(clearance, units),
+        approachFeedMmPerMin: displayToMm(approachFeed, units),
       })
       const restartMetadata = {
         path: sourcePath,
@@ -294,7 +312,11 @@ export function RestartFromLineDialog({
                 <SummaryCell label="Resume line" value={`L${analysis.resumeLine}`} accent />
                 <SummaryCell label="Work offset" value={analysis.state.wcs} />
                 <SummaryCell label="Tool" value={analysis.state.tool == null ? 'Verify' : `T${analysis.state.tool}`} />
-                <SummaryCell label="Start position" value={`X${fmt(analysis.state.positionMm.x)} Y${fmt(analysis.state.positionMm.y)} Z${fmt(analysis.state.positionMm.z)}`} compact />
+                <SummaryCell
+                  label={`Start position (${linearUnitLabel(units)})`}
+                  value={`X${fmtLinear(analysis.state.positionMm.x, units)} Y${fmtLinear(analysis.state.positionMm.y, units)} Z${fmtLinear(analysis.state.positionMm.z, units)}`}
+                  compact
+                />
               </div>
 
               {analysis.blockers.length > 0 && (
@@ -326,9 +348,9 @@ export function RestartFromLineDialog({
                     <span className="ml-2 font-normal text-text-muted">G53 retract and controlled Z re-entry</span>
                   </summary>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-3.5 pb-3.5 border-t border-border pt-3">
-                    <NumberField label="Machine safe Z" value={safeZText} onChange={setSafeZText} suffix="mm" />
-                    <NumberField label="Approach clearance" value={clearanceText} onChange={setClearanceText} suffix="mm" min="0" />
-                    <NumberField label="Approach feed" value={approachFeedText} onChange={setApproachFeedText} suffix="mm/min" min="0.001" />
+                    <NumberField label="Machine safe Z" value={safeZText} onChange={setSafeZText} suffix={linearUnitLabel(units)} />
+                    <NumberField label="Approach clearance" value={clearanceText} onChange={setClearanceText} suffix={linearUnitLabel(units)} min="0" />
+                    <NumberField label="Approach feed" value={approachFeedText} onChange={setApproachFeedText} suffix={feedUnitLabel(units)} min="0.001" />
                   </div>
                   {!positioningValid && <p className="px-3.5 pb-3 text-sm text-danger">Enter valid safe-positioning values.</p>}
                 </details>

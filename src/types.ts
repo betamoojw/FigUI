@@ -109,6 +109,7 @@ export interface ControllerSettings {
   hasFlood?: boolean
   hasProbe?: boolean
   hasToolsetter?: boolean
+  reportInches?: boolean
 }
 
 export interface FluidNCSetting {

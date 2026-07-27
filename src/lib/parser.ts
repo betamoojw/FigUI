@@ -1,6 +1,11 @@
 import type { ControllerSettings, FluidNCSetting, GCodeModes, MachineStatus, MachineState, Position } from '../types'
+import { MM_PER_INCH } from './units'
 
-export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
+export interface ParseStatusOptions {
+  reportInches?: boolean
+}
+
+export function parseStatusReport(raw: string, options: ParseStatusOptions = {}): Partial<MachineStatus> | null {
   if (!raw.startsWith('<') || !raw.endsWith('>')) return null
   const parts = raw.slice(1, -1).split('|')
   const status: Partial<MachineStatus> = {}
@@ -16,19 +21,21 @@ export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   status.feed = 0
   status.spindle = 0
 
+  const linearScale = options.reportInches ? MM_PER_INCH : 1
+
   let hasSd = false
   let hasPlannerLine = false
   for (let i = 1; i < parts.length; i++) {
     const p = parts[i]
     if (p.startsWith('WPos:')) {
-      status.wpos = parsePos(p.slice(5))
+      status.wpos = parsePos(p.slice(5), linearScale)
     } else if (p.startsWith('MPos:')) {
-      status.mpos = parsePos(p.slice(5))
+      status.mpos = parsePos(p.slice(5), linearScale)
     } else if (p.startsWith('WCO:')) {
-      status.wco = parsePos(p.slice(4))
+      status.wco = parsePos(p.slice(4), linearScale)
     } else if (p.startsWith('FS:')) {
       const [f, s] = p.slice(3).split(',').map(Number)
-      status.feed = f ?? 0
+      status.feed = (f ?? 0) * linearScale
       status.spindle = s ?? 0
     } else if (p.startsWith('Ov:')) {
       const [f, r, s] = p.slice(3).split(',').map(Number)
@@ -58,9 +65,16 @@ export function parseStatusReport(raw: string): Partial<MachineStatus> | null {
   return status
 }
 
-function parsePos(str: string): Position {
+function parsePos(str: string, linearScale = 1): Position {
   const [x, y, z, a, b, c] = str.split(',').map(Number)
-  return { x: x ?? 0, y: y ?? 0, z: z ?? 0, a, b, c }
+  return {
+    x: (x ?? 0) * linearScale,
+    y: (y ?? 0) * linearScale,
+    z: (z ?? 0) * linearScale,
+    a,
+    b,
+    c,
+  }
 }
 
 export function parseESP800(raw: string): Record<string, string> {
@@ -176,6 +190,12 @@ const CONTROLLER_SETTING_MAP: Record<string, keyof ControllerSettings> = {
 }
 
 export function parseControllerSettingLine(line: string): Partial<ControllerSettings> | null {
+  const inchReport = line.match(/^\$(?:13|Report\/Inches|report_inches)=(\S+)/i)
+  if (inchReport) {
+    const flag = parseBooleanSetting(inchReport[1])
+    return flag === undefined ? null : { reportInches: flag }
+  }
+
   const match = line.match(/^\$(11|23|30|31|100|101|102|110|111|112|120|121|122|130|131|132)=(-?\d+(?:\.\d+)?)(?:\s|$)/)
   if (!match) return null
 
@@ -183,6 +203,13 @@ export function parseControllerSettingLine(line: string): Partial<ControllerSett
   if (!Number.isFinite(value)) return null
 
   return { [CONTROLLER_SETTING_MAP[match[1]]]: value }
+}
+
+export function parseBooleanSetting(raw: string): boolean | undefined {
+  const value = raw.trim().toLowerCase()
+  if (value === '1' || value === 'true' || value === 'on' || value === 'yes') return true
+  if (value === '0' || value === 'false' || value === 'off' || value === 'no') return false
+  return undefined
 }
 
 export function classifyLine(line: string): 'error' | 'alarm' | 'info' | 'ok' | 'status' | 'normal' {

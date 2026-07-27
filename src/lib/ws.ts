@@ -467,7 +467,9 @@ function handleLine(line: string) {
   const isSilentLine = consumeSilentLine(line)
 
   if (line.startsWith('<') && line.endsWith('>')) {
-    const parsed = parseStatusReport(line)
+    const parsed = parseStatusReport(line, {
+      reportInches: useMachineStore.getState().controllerSettings.reportInches,
+    })
     if (parsed) useMachineStore.getState().updateStatus(parsed)
     lineHandlers.forEach(fn => fn(line))
     return

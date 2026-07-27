@@ -2770,7 +2770,13 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     const travelZMm = displayToMm(travelZDisplay, units)
     let result: string | null
     try {
-      result = buildFramingGCode(model, { mode: framingMode, feedMmPerMin, clearanceMm, travelZMm })
+      result = buildFramingGCode(model, {
+        mode: framingMode,
+        feedMmPerMin,
+        clearanceMm,
+        travelZMm,
+        displayUnits: units,
+      })
     } catch (error) {
       setFramingError(error instanceof Error ? error.message : 'Framing settings are not valid.')
       return
