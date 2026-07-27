@@ -25,7 +25,7 @@ import {
   uploadFile,
   createDir,
   renameFile,
-  getBase,
+  downloadFile,
   fetchFileContent,
   saveFileContent,
 } from "../lib/http";
@@ -115,14 +115,12 @@ function FileRow({
     }
   }
 
-  function handleDownload() {
-    const url = `${getBase()}${fullName}`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = entry.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  async function handleDownload() {
+    try {
+      await downloadFile(fullName, entry.name, fs);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Download failed");
+    }
   }
 
   function handleTap() {

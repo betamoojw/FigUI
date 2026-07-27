@@ -12,7 +12,20 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   return next
 }
 
-function fsEndpoint(fs: 'sd' | 'local') {
+type Filesystem = 'sd' | 'local'
+
+const filesystemChains: Record<Filesystem, Promise<unknown>> = {
+  sd: Promise.resolve(),
+  local: Promise.resolve(),
+}
+
+function serializeFilesystem<T>(fs: Filesystem, fn: () => Promise<T>): Promise<T> {
+  const next = filesystemChains[fs].then(fn, fn)
+  filesystemChains[fs] = next.catch(() => {})
+  return next
+}
+
+function fsEndpoint(fs: Filesystem) {
   return fs === 'sd' ? '/upload' : '/files'
 }
 
@@ -72,8 +85,7 @@ export const sendSilent = (cmd: string) =>
 export const getDeviceInfoFast = () =>
   get('/command', { plain: '[ESP800]' }, 4000)
 
-export function listFiles(path: string, fs: 'sd' | 'local' = 'sd'): Promise<FileListResult> {
-  return serialize(async () => {
+async function listFilesRequest(path: string, fs: Filesystem): Promise<FileListResult> {
     const apiPath = fs === 'sd' ? sdRelPath(path) : path
     const res = await fetch(`${base}${fsEndpoint(fs)}?${new URLSearchParams({ path: apiPath })}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -89,27 +101,37 @@ export function listFiles(path: string, fs: 'sd' | 'local' = 'sd'): Promise<File
       used:       parseSize(raw.used),
       occupation: Number(raw.occupation) || 0,
     }
-  })
 }
 
-export async function deleteFile(path: string, filename: string, fs: 'sd' | 'local' = 'sd'): Promise<void> {
-  const apiPath = fs === 'sd' ? sdRelPath(path) : path
-  await get(fsEndpoint(fs), { path: apiPath, action: 'delete', filename })
+export function listFiles(path: string, fs: Filesystem = 'sd'): Promise<FileListResult> {
+  return serializeFilesystem(fs, () => listFilesRequest(path, fs))
 }
 
-export async function deleteDir(path: string, filename: string, fs: 'sd' | 'local' = 'sd'): Promise<void> {
-  const apiPath = fs === 'sd' ? sdRelPath(path) : path
-  await get(fsEndpoint(fs), { path: apiPath, action: 'deletedir', filename })
+async function filesystemGet(path: string, params: Record<string, string>): Promise<string> {
+  const q = new URLSearchParams({ ...params, PAGEID: getPageId() })
+  const res = await fetch(`${base}${path}?${q}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.text()
 }
 
-export async function createDir(path: string, filename: string, fs: 'sd' | 'local' = 'sd'): Promise<void> {
+export async function deleteFile(path: string, filename: string, fs: Filesystem = 'sd'): Promise<void> {
   const apiPath = fs === 'sd' ? sdRelPath(path) : path
-  await get(fsEndpoint(fs), { path: apiPath, action: 'createdir', filename })
+  await serializeFilesystem(fs, () => filesystemGet(fsEndpoint(fs), { path: apiPath, action: 'delete', filename }))
 }
 
-export async function renameFile(path: string, filename: string, newname: string, fs: 'sd' | 'local' = 'sd'): Promise<void> {
+export async function deleteDir(path: string, filename: string, fs: Filesystem = 'sd'): Promise<void> {
   const apiPath = fs === 'sd' ? sdRelPath(path) : path
-  await get(fsEndpoint(fs), { path: apiPath, action: 'rename', filename, newname })
+  await serializeFilesystem(fs, () => filesystemGet(fsEndpoint(fs), { path: apiPath, action: 'deletedir', filename }))
+}
+
+export async function createDir(path: string, filename: string, fs: Filesystem = 'sd'): Promise<void> {
+  const apiPath = fs === 'sd' ? sdRelPath(path) : path
+  await serializeFilesystem(fs, () => filesystemGet(fsEndpoint(fs), { path: apiPath, action: 'createdir', filename }))
+}
+
+export async function renameFile(path: string, filename: string, newname: string, fs: Filesystem = 'sd'): Promise<void> {
+  const apiPath = fs === 'sd' ? sdRelPath(path) : path
+  await serializeFilesystem(fs, () => filesystemGet(fsEndpoint(fs), { path: apiPath, action: 'rename', filename, newname }))
 }
 
 function fmtBytes(n: number): string {
@@ -130,10 +152,10 @@ function uploadStatusError(text: string): string | null {
   }
 }
 
-async function checkFreeSpace(fs: 'sd' | 'local', bytes: number, dir: string, filename: string): Promise<void> {
+async function checkFreeSpace(fs: Filesystem, bytes: number, dir: string, filename: string): Promise<void> {
   if (fs !== 'local') return
   try {
-    const info = await listFiles(dir, fs)
+    const info = await listFilesRequest(dir, fs)
     if (!info.total) return
     const available = Math.max(0, info.total - info.used)
     const existing = info.files.find(entry => !entry.isDir && entry.name === filename)
@@ -149,57 +171,82 @@ async function checkFreeSpace(fs: 'sd' | 'local', bytes: number, dir: string, fi
   }
 }
 
-export async function uploadFile(
+export function uploadFile(
   path: string,
   file: File,
-  fs: 'sd' | 'local',
+  fs: Filesystem,
   onProgress?: (pct: number) => void,
   onPhase?: (phase: 'preparing' | 'uploading' | 'finishing') => void,
 ): Promise<void> {
   onPhase?.('preparing')
-  await checkFreeSpace(fs, file.size, path, file.name)
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    const fd = new FormData()
-    const rawPath = fs === 'sd' ? sdRelPath(path) : path
-    const apiPath = normalizeUploadDirPath(rawPath)
+  return serializeFilesystem(fs, async () => {
+    await checkFreeSpace(fs, file.size, path, file.name)
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      const fd = new FormData()
+      const rawPath = fs === 'sd' ? sdRelPath(path) : path
+      const apiPath = normalizeUploadDirPath(rawPath)
 
-    const fullPath = joinUploadPath(apiPath, file.name)
-    fd.append('path', apiPath)
-    fd.append(`${fullPath}S`, String(file.size))
-    fd.append('myfile[]', file, fullPath)
+      const fullPath = joinUploadPath(apiPath, file.name)
+      fd.append('path', apiPath)
+      fd.append(`${fullPath}S`, String(file.size))
+      fd.append('myfile[]', file, fullPath)
 
-    if (onProgress) {
-      xhr.upload.onprogress = e => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+      if (onProgress) {
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+        }
       }
-    }
-    xhr.upload.onloadstart = () => onPhase?.('uploading')
-    xhr.upload.onload = () => onPhase?.('finishing')
+      xhr.upload.onloadstart = () => onPhase?.('uploading')
+      xhr.upload.onload = () => onPhase?.('finishing')
 
-    xhr.onload = () => {
-      if (xhr.status >= 300) {
-        reject(new Error(`Upload ${xhr.status}`))
-        return
+      xhr.onload = () => {
+        if (xhr.status >= 300) {
+          reject(new Error(`Upload ${xhr.status}`))
+          return
+        }
+        const statusError = uploadStatusError(xhr.responseText)
+        statusError ? reject(new Error(statusError)) : resolve()
       }
-      const statusError = uploadStatusError(xhr.responseText)
-      statusError ? reject(new Error(statusError)) : resolve()
-    }
-    xhr.onerror = () => reject(new Error('Upload failed'))
-    xhr.open('POST', `${base}${fsEndpoint(fs)}`)
-    xhr.send(fd)
+      xhr.onerror = () => reject(new Error('Upload failed'))
+      xhr.onabort = () => reject(new Error('Upload cancelled'))
+      xhr.ontimeout = () => reject(new Error('Upload timed out'))
+      xhr.timeout = Math.max(120_000, Math.ceil(file.size / 65_536) * 1_000)
+      xhr.open('POST', `${base}${fsEndpoint(fs)}`)
+      xhr.send(fd)
+    })
   })
 }
 
-export function fetchFileContent(fullPath: string, fs: 'sd' | 'local' = 'sd'): Promise<string> {
-  return serialize(async () => {
-    const mountedPath = fs === 'sd' && !/^\/sd(?:\/|$)/.test(fullPath)
-      ? `/sd${fullPath.startsWith('/') ? '' : '/'}${fullPath}`
-      : fullPath
-    const url = `${base}${mountedPath}`
+function mountedFilePath(fullPath: string, fs: Filesystem): string {
+  return fs === 'sd' && !/^\/sd(?:\/|$)/.test(fullPath)
+    ? `/sd${fullPath.startsWith('/') ? '' : '/'}${fullPath}`
+    : fullPath
+}
+
+export function fetchFileContent(fullPath: string, fs: Filesystem = 'sd'): Promise<string> {
+  return serializeFilesystem(fs, async () => {
+    const url = `${base}${mountedFilePath(fullPath, fs)}`
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.text()
+  })
+}
+
+export function downloadFile(fullPath: string, filename: string, fs: Filesystem): Promise<void> {
+  return serializeFilesystem(fs, async () => {
+    const res = await fetch(`${base}${mountedFilePath(fullPath, fs)}`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`Download failed (${res.status})`)
+
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   })
 }
 
@@ -207,7 +254,7 @@ export async function saveFileContent(
   path: string,
   filename: string,
   content: string,
-  fs: 'sd' | 'local',
+  fs: Filesystem,
 ): Promise<void> {
   const blob = new Blob([content], { type: 'application/octet-stream' })
   const file = new File([blob], filename)
