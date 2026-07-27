@@ -234,20 +234,38 @@ export function fetchFileContent(fullPath: string, fs: Filesystem = 'sd'): Promi
 }
 
 export function downloadFile(fullPath: string, filename: string, fs: Filesystem): Promise<void> {
-  return serializeFilesystem(fs, async () => {
-    const res = await fetch(`${base}${mountedFilePath(fullPath, fs)}`, { cache: 'no-store' })
-    if (!res.ok) throw new Error(`Download failed (${res.status})`)
 
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-  })
+  return (async () => {
+    const controller = new AbortController()
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 120_000)
+    let objectUrl: string | null = null
+
+    try {
+      const res = await fetch(`${base}${mountedFilePath(fullPath, fs)}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`Download failed (${res.status})`)
+
+      objectUrl = URL.createObjectURL(await res.blob())
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    } catch (error) {
+      if (timedOut) throw new Error('Download timed out')
+      throw error
+    } finally {
+      clearTimeout(timer)
+      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl!), 0)
+    }
+  })()
 }
 
 export async function saveFileContent(

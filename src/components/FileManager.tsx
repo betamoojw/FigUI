@@ -76,6 +76,7 @@ function FileRow({
   isTablet,
 }: FileRowProps) {
   const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(entry.name);
   const [showMenu, setShowMenu] = useState(false);
@@ -116,10 +117,14 @@ function FileRow({
   }
 
   async function handleDownload() {
+    if (downloading) return;
+    setDownloading(true);
     try {
       await downloadFile(fullName, entry.name, fs);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -143,7 +148,7 @@ function FileRow({
 
   function handleMenuDownload() {
     setShowMenu(false);
-    handleDownload();
+    void handleDownload();
   }
 
   function handleMenuRename() {
@@ -259,11 +264,12 @@ function FileRow({
               )}
               {!entry.isDir && (
                 <button
-                  className="p-1.5 rounded text-info hover:bg-info/10 transition-colors"
+                  className="p-1.5 rounded text-info hover:bg-info/10 transition-colors disabled:opacity-50"
                   onClick={handleDownload}
-                  title="Download"
+                  disabled={downloading}
+                  title={downloading ? "Downloading" : "Download"}
                 >
-                  <Download size={12} />
+                  {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
                 </button>
               )}
               <button
@@ -354,11 +360,12 @@ function FileRow({
               )}
               {!entry.isDir && (
                 <button
-                  className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-text-primary hover:bg-elevated transition-colors"
+                  className="flex items-center gap-4 px-4 py-4 rounded-lg text-xl w-full text-left text-text-primary hover:bg-elevated transition-colors disabled:opacity-50"
                   onClick={handleMenuDownload}
+                  disabled={downloading}
                 >
-                  <Download size={22} />
-                  <span>Download</span>
+                  {downloading ? <Loader2 size={22} className="animate-spin" /> : <Download size={22} />}
+                  <span>{downloading ? "Downloading…" : "Download"}</span>
                 </button>
               )}
               <button

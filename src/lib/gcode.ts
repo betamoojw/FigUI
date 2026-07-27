@@ -262,7 +262,7 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
 
     if (Number.isFinite(words.F) && words.F > 0) {
       if (feedRateMode === 95) feedMmPerRev = words.F
-      else feedMmPerMin = words.F
+      else if (feedRateMode !== 93) feedMmPerMin = words.F
     }
     if (Number.isFinite(words.S) && words.S >= 0) spindleRpm = words.S
 
@@ -317,8 +317,10 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
       const moveType = getMoveType()
       const feedData = moveType === 'rapid'
         ? {}
-        : feedRateMode === 93 && Number.isFinite(words.F) && words.F > 0
-          ? { inverseTimeSeconds: 60 / words.F }
+        : feedRateMode === 93
+          ? Number.isFinite(words.F) && words.F > 0
+            ? { inverseTimeSeconds: 60 / words.F }
+            : { timingUnknown: true }
           : feedRateMode === 95
             ? feedMmPerRev > 0 && spindleRpm != null && spindleRpm > 0
               ? { feedMmPerMin: feedMmPerRev * spindleRpm }
@@ -357,7 +359,11 @@ export function parseGCode(text: string, options: ParseGCodeOptions = {}): GCode
         // Skip arcs with zero radius (degenerate)
         const r = Math.sqrt(i * i + j * j + k * k)
         if (r > 1e-6) {
-          const isFullCircle = Math.abs(x0 - x) < 1e-4 && Math.abs(y0 - y) < 1e-4
+          const isFullCircle = plane === 17
+            ? Math.abs(x0 - x) < 1e-4 && Math.abs(y0 - y) < 1e-4
+            : plane === 18
+              ? Math.abs(x0 - x) < 1e-4 && Math.abs(z0 - z) < 1e-4
+              : Math.abs(y0 - y) < 1e-4 && Math.abs(z0 - z) < 1e-4
           if (isFullCircle) {
             if (plane === 17) {
               const cx = x0 + i, cy = y0 + j
