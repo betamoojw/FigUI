@@ -3,6 +3,7 @@ import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore, stateColor, stateBg } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { useJobRuntimeEstimate } from '../lib/jobRuntime'
+import { useControllerJobStarting } from '../lib/jobState'
 import { sendRealtime } from '../lib/ws'
 import { alarmClearActionTitle, clearMachineAlarm } from '../lib/alarm'
 import { runMacro, MACRO_BTN_CLASS } from '../lib/macros'
@@ -23,6 +24,8 @@ interface Props {
 export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
   const connected = useMachineStore(s => s.connected)
   const status = useMachineStore(s => s.status)
+  const controllerResetPending = useMachineStore(s => s.controllerResetPending)
+  const controllerJobStarting = useControllerJobStarting()
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const theme = useMachineStore(s => s.theme)
   const toggleTheme = useMachineStore(s => s.toggleTheme)
@@ -63,7 +66,7 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
 
       <div className="h-5 w-px bg-border" />
 
-      {status.state === 'Alarm' ? (
+      {status.state === 'Alarm' && !controllerResetPending ? (
         <button
           className={`tag ${stateBg(status.state)} ${stateColor(status.state)} cursor-pointer hover:opacity-80 active:opacity-60 text-base`}
           onClick={() => clearMachineAlarm(status.alarmCode)}
@@ -73,11 +76,11 @@ export function Header({ onSettingsClick, onAboutClick, isTablet }: Props) {
           {status.state}
         </button>
       ) : (
-        <div className={`tag ${stateBg(status.state)} ${stateColor(status.state)} text-base`}>
+        <div className={`tag ${stateBg(controllerJobStarting || controllerResetPending ? 'Run' : status.state)} ${stateColor(controllerJobStarting || controllerResetPending ? 'Run' : status.state)} text-base`}>
           <span className={`w-1.5 h-1.5 rounded-full ${
-            status.state === 'Run' || status.state === 'Jog' ? 'bg-current animate-pulse' : 'bg-current'
+            controllerJobStarting || controllerResetPending || status.state === 'Run' || status.state === 'Jog' ? 'bg-current animate-pulse' : 'bg-current'
           }`} />
-          {status.state}
+          {controllerResetPending ? 'Resetting' : controllerJobStarting ? 'Starting' : status.state}
         </div>
       )}
 

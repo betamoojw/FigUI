@@ -2,11 +2,14 @@ import { Play, Pause, Square, RotateCcw, DoorOpen } from 'lucide-react'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { formatRuntime, useJobRuntimeEstimate } from '../lib/jobRuntime'
+import { useControllerJobStarting } from '../lib/jobState'
 import { sendRealtime } from '../lib/ws'
 import { clearMachineAlarm } from '../lib/alarm'
 
 export function JobControl() {
   const status = useMachineStore(s => s.status)
+  const controllerResetPending = useMachineStore(s => s.controllerResetPending)
+  const controllerJobStarting = useControllerJobStarting()
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const model = useGCodeStore(s => s.model)
   const loadedPath = useGCodeStore(s => s.loadedPath)
@@ -16,7 +19,7 @@ export function JobControl() {
   const progressPercent = runtime.progressPercent
   const cancelTrackedJob = useGCodeStore(s => s.cancelTrackedJob)
 
-  const isRunning = state === 'Run'
+  const isRunning = state === 'Run' || controllerJobStarting || controllerResetPending
   const isHold    = state === 'Hold'
   const isAlarm   = state === 'Alarm'
   const isDoor    = state === 'Door'
@@ -31,7 +34,7 @@ export function JobControl() {
   }
   function clearAlarm() { clearMachineAlarm(status.alarmCode) }
 
-  if (!hasSd && !isAlarm && !isHold && !isDoor) return null
+  if (!hasSd && !isAlarm && !isHold && !isDoor && !controllerJobStarting && !controllerResetPending) return null
 
   return (
     <div className="panel">

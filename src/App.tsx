@@ -80,6 +80,8 @@ export function App() {
   const setStartupPending = useMachineStore(s => s.setStartupPending)
   const clearTerminal = useTerminalStore(s => s.clear)
   const machineState = useMachineStore(s => s.status.state)
+  const spindleSpeed = useMachineStore(s => s.status.spindle)
+  const spindleSpinupMs = useMachineStore(s => s.controllerSettings.spindleSpinupMs ?? 0)
   const activeLayout = useActiveLayout(layoutMode)
   const loadGCodeFile = useGCodeStore(s => s.loadFile)
   const senderPhase = useGCodeSenderStore(s => s.phase)
@@ -88,6 +90,7 @@ export function App() {
   const senderFailureLine = useGCodeSenderStore(s => s.failureLine)
   const senderFailureLineSource = useGCodeSenderStore(s => s.failureLineSource)
   const activeJobSource = useGCodeStore(s => s.trackedJob?.source)
+  const activeJobStartedAt = useGCodeStore(s => s.trackedJob?.startedAt)
   const finishTrackedJob = useGCodeStore(s => s.finishTrackedJob)
   const cancelTrackedJob = useGCodeStore(s => s.cancelTrackedJob)
   const [phase, setPhase]   = useState<Phase>('connecting')
@@ -123,6 +126,9 @@ export function App() {
   const [startupErrors, setStartupErrors] = useState<string[]>([])
   const [startupErrorsOpen, setStartupErrorsOpen] = useState(false)
   const controllerJobWasRunningRef = useRef(false)
+  const controllerJobAwaitingRunAfterSpinupRef = useRef(false)
+  const controllerJobSpinupSeenRef = useRef(false)
+  const controllerTrackedJobStartedAtRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (activeJobSource !== 'local') return
@@ -133,17 +139,49 @@ export function App() {
   useEffect(() => {
     if (activeJobSource !== 'controller') {
       controllerJobWasRunningRef.current = false
+      controllerJobAwaitingRunAfterSpinupRef.current = false
+      controllerJobSpinupSeenRef.current = false
+      controllerTrackedJobStartedAtRef.current = null
       return
+    }
+
+    if (controllerTrackedJobStartedAtRef.current !== activeJobStartedAt) {
+      controllerJobWasRunningRef.current = false
+      controllerJobAwaitingRunAfterSpinupRef.current = false
+      controllerJobSpinupSeenRef.current = false
+      controllerTrackedJobStartedAtRef.current = activeJobStartedAt ?? null
     }
 
     if (machineState === 'Run' || machineState === 'Hold') {
       controllerJobWasRunningRef.current = true
+      controllerJobAwaitingRunAfterSpinupRef.current = false
     } else if (machineState === 'Idle' && controllerJobWasRunningRef.current) {
-      finishTrackedJob('controller')
+      
+      const withinInitialSpinup = spindleSpinupMs > 0
+        && activeJobStartedAt != null
+        && Date.now() - activeJobStartedAt < spindleSpinupMs
+      const spindleIsStarting = spindleSpinupMs > 0 && spindleSpeed > 0
+      if (controllerJobAwaitingRunAfterSpinupRef.current) {
+        // Keep waiting. Repeated Idle reports are expected throughout the
+        // controller's delay and must never be treated as job completion.
+      } else if (!controllerJobSpinupSeenRef.current && (withinInitialSpinup || spindleIsStarting)) {
+        controllerJobAwaitingRunAfterSpinupRef.current = true
+        controllerJobSpinupSeenRef.current = true
+      } else {
+        finishTrackedJob('controller')
+      }
     } else if (machineState === 'Alarm') {
       cancelTrackedJob('controller')
     }
-  }, [activeJobSource, machineState, finishTrackedJob, cancelTrackedJob])
+  }, [
+    activeJobSource,
+    activeJobStartedAt,
+    machineState,
+    spindleSpeed,
+    spindleSpinupMs,
+    finishTrackedJob,
+    cancelTrackedJob,
+  ])
 
   useEffect(() => {
     fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)

@@ -1807,6 +1807,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
   const status = useMachineStore(s => s.status)
   const connected = useMachineStore(s => s.connected)
+  const controllerResetPending = useMachineStore(s => s.controllerResetPending)
   const controllerSettings = useMachineStore(s => s.controllerSettings)
   const units = useMachineStore(s => s.units)
   const senderPhase = useGCodeSenderStore(s => s.phase)
@@ -1822,6 +1823,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const resumeSender = useGCodeSenderStore(s => s.resume)
   const abortSender = useGCodeSenderStore(s => s.abort)
   const dismissSender = useGCodeSenderStore(s => s.dismiss)
+  const trackedJobSource = useGCodeStore(s => s.trackedJob?.source)
   const startTrackedJob = useGCodeStore(s => s.startTrackedJob)
   const cancelTrackedJob = useGCodeStore(s => s.cancelTrackedJob)
   const finishedJobElapsedMs = useGCodeStore(s => s.finishedJobElapsedMs)
@@ -1839,9 +1841,14 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const showEstimatedTiming = runtime.source === 'estimated' && (!senderActive || senderShowRuntimeEstimate)
   const simulationActive = simulationPhase !== 'idle'
   const simulationPaused = simulationPhase === 'paused'
-  const machineJobActive = status.state === 'Run' || status.state === 'Hold' || senderActive
+  // FluidNC stays Idle while a configured spindle spins up. Keep the requested
+  // controller job visibly active during that interval so Start cannot be
+  // pressed twice and the abort control remains immediately available.
+  const controllerJobStarting = trackedJobSource === 'controller' && status.state === 'Idle'
+  const machineJobActive = status.state === 'Run' || status.state === 'Hold' || senderActive || controllerJobStarting
   const isRunning = machineJobActive || simulationActive
-  const isJobRunning = senderPhase === 'streaming' || senderPhase === 'draining' || (status.state === 'Run' && senderPhase !== 'paused')
+  const isJobRunning = senderPhase === 'streaming' || senderPhase === 'draining'
+    || (status.state === 'Run' && senderPhase !== 'paused') || controllerJobStarting
   const isJobHeld = senderPhase === 'paused' || status.state === 'Hold'
   const isLargeProgressOverlayDisabled = !!model && isRunning && model.segments.length > LARGE_PROGRESS_OVERLAY_SEGMENT_LIMIT
   const cancelAndStartJob = useGCodeStore(s => s.cancelAndStartJob)
@@ -1852,7 +1859,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     if (cancelAndStartJob(path)) startTrackedJob('controller')
   }, [pendingPath, cancelAndStartJob, startTrackedJob])
 
-  const isViewerStartBlocked = loading || isProcessing2D || pendingPath !== null
+  const isViewerStartBlocked = loading || isProcessing2D || pendingPath !== null || controllerResetPending
   const is3DToggleDisabled = pendingPath !== null || isProcessing2D || (!!model && !is3DReady)
   const [autoFollow, setAutoFollow] = useState(true)
   const [coolantState, setCoolantState] = useState<'off' | 'mist' | 'flood'>('off')
@@ -3213,8 +3220,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                   type="button"
                   className="flex items-center gap-1.5 rounded border border-border bg-surface/80 backdrop-blur-sm px-3 py-1.5 text-sm font-semibold text-text-primary shadow-sm hover:border-info/60 hover:text-info active:bg-elevated disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text-primary"
                   onClick={openFramingDialog}
-                  disabled={!connected || status.state !== 'Idle'}
-                  title={!connected || status.state !== 'Idle' ? 'Connect to an idle controller before framing' : 'Frame the cutting extents at clearance height'}
+                  disabled={!connected || status.state !== 'Idle' || controllerResetPending}
+                  title={!connected || status.state !== 'Idle' || controllerResetPending ? 'Wait for the controller to be ready before framing' : 'Frame the cutting extents at clearance height'}
                 >
                   <Maximize size={14} />
                   Frame
@@ -3432,6 +3439,12 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         {/* Progress bar — only while a job is active */}
         {(isJobRunning || isJobHeld || simulationActive) && (
           <div className="flex flex-col gap-1.5">
+            {controllerJobStarting && (
+              <div className="flex items-center gap-2 text-[11px] font-mono text-text-muted" role="status" aria-live="polite">
+                <span className="h-1.5 w-1.5 rounded-full bg-ok animate-pulse" />
+                Starting job - waiting for spindle spin-up.
+              </div>
+            )}
             {displayedProgressPercent != null && (
               <div className="flex items-center gap-2.5">
                 <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
@@ -3553,7 +3566,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               Flood
             </button>}
             <button
-              onClick={() => { sendRaw('M9'); setCoolantState('off') }}
+              onClick={() => { if (sendRaw('M9')) setCoolantState('off') }}
               className={`btn gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-lg'} justify-center flex-1 ${coolantState === 'off' ? 'border-danger/50 text-danger' : 'btn-ghost'}`}
             >
               <PowerOff size={isTablet ? 18 : 13} />
@@ -3608,7 +3621,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               }}
               disabled={(!loadedPath && !isLocalFile) || !connected || status.state !== 'Idle' || isViewerStartBlocked}
               title={isViewerStartBlocked
-                ? 'Wait for file processing to finish before starting the job'
+                ? controllerResetPending ? 'Controller is resetting after the abort' : 'Wait for file processing to finish before starting the job'
                 : isLocalFile ? 'Stream this local file to FluidNC' : 'Start job from loaded controller file'}
             >
               <Play size={isTablet ? 18 : 14} />
@@ -3616,7 +3629,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             </button>
           )}
           {isJobRunning && (
-            <button className={`btn btn-warn-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`} onClick={() => senderActive ? pauseSender() : sendRealtime(0x21)}>
+            <button
+              className={`btn btn-warn-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`}
+              onClick={() => senderActive ? pauseSender() : sendRealtime(0x21)}
+              title={controllerJobStarting ? 'Request a feed hold while the job starts' : undefined}
+            >
               <Pause size={isTablet ? 18 : 13} />
               Pause
             </button>
@@ -3790,8 +3807,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               <button
                 type="submit"
                 className="btn btn-ok-solid justify-center gap-2 px-4 py-2 text-sm font-semibold"
-                disabled={!connected || status.state !== 'Idle'}
-                title={!connected || status.state !== 'Idle' ? 'Connect to an idle controller before framing' : 'Start framing routine'}
+                disabled={!connected || status.state !== 'Idle' || controllerResetPending}
+                title={!connected || status.state !== 'Idle' || controllerResetPending ? 'Wait for the controller to be ready before framing' : 'Start framing routine'}
               >
                 <Play size={14} />
                 Start frame

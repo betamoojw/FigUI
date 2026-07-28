@@ -85,6 +85,23 @@ let commandProcessor: ReturnType<typeof setInterval> | null = null
 const pendingAcknowledgments = new Map<string, { callback: () => void, timeoutId: ReturnType<typeof setTimeout> }>()
 const pendingSilentResponses: SilentResponseMatcher[] = []
 let activeSilentResponse: SilentResponseMatcher | null = null
+let resetReadyTimer: ReturnType<typeof setTimeout> | null = null
+
+const SOFT_RESET_READY_DELAY_MS = 1000
+
+function beginSoftResetCooldown() {
+  if (resetReadyTimer) clearTimeout(resetReadyTimer)
+  // A reset cancels controller work. Do not let ordinary commands that were
+  // queued before it (or a new Start clicked immediately after it) run later.
+  for (let index = commandQueue.length - 1; index >= 0; index--) {
+    if (!commandQueue[index].isRealtime) commandQueue.splice(index, 1)
+  }
+  useMachineStore.getState().setControllerResetPending(true)
+  resetReadyTimer = setTimeout(() => {
+    resetReadyTimer = null
+    useMachineStore.getState().setControllerResetPending(false)
+  }, SOFT_RESET_READY_DELAY_MS)
+}
 
 export interface ExclusiveCommandResult {
   outcome: 'ok' | 'error' | 'timeout' | 'disconnected' | 'unavailable'
@@ -136,6 +153,10 @@ function processCommandQueue() {
       const buf = new Uint8Array(1)
       buf[0] = parseInt(command.command)
       socket!.send(buf)
+      if (buf[0] === 0x18) {
+        beginSoftResetCooldown()
+        softResetHandlers.forEach(handler => handler())
+      }
     } else {
       socket!.send(command.command + '\n')
       lastResponseProducingSendAt = Date.now()
@@ -560,7 +581,7 @@ export function sendRaw(cmd: string) {
   // An acknowledged G-code stream owns the normal response channel. Letting a
   // terminal, plugin, or UI command enter the queue here would make its `ok`
   // indistinguishable from a program-block acknowledgement.
-  if (responseTrafficSuspensions > 0) return false
+  if (responseTrafficSuspensions > 0 || useMachineStore.getState().controllerResetPending) return false
   queueCommand({ command: cmd, isRealtime: false, priority: 'normal', timestamp: Date.now() })
   return socket?.readyState === WebSocket.OPEN
 }
@@ -716,13 +737,15 @@ export async function sendStartupQueries() {
 }
 
 export function sendRealtime(byte: number) {
+  // Unlike other realtime inputs, Ctrl-X changes local safety state. Do not
+  // queue it or show a reset cooldown unless it can actually be sent.
+  if (byte === 0x18 && socket?.readyState !== WebSocket.OPEN) return false
   queueCommand({
     command: byte.toString(),
     isRealtime: true,
     priority: byte === 0x18 ? 'emergency' : 'normal',
     timestamp: Date.now(),
   })
-  if (byte === 0x18) softResetHandlers.forEach(handler => handler())
   return socket?.readyState === WebSocket.OPEN
 }
 
@@ -731,7 +754,10 @@ export function sendRealtimeNow(byte: number) {
   if (socket?.readyState !== WebSocket.OPEN) return false
   try {
     socket.send(Uint8Array.of(byte))
-    if (byte === 0x18) softResetHandlers.forEach(handler => handler())
+    if (byte === 0x18) {
+      beginSoftResetCooldown()
+      softResetHandlers.forEach(handler => handler())
+    }
     return true
   } catch {
     return false

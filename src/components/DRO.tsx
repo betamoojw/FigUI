@@ -5,7 +5,7 @@ import { sendRaw, sendRealtime, sendSilentAlarmQuery } from '../lib/ws'
 import { jogFeedKeyForAxis, loadPersistedJogFeed } from '../lib/jog'
 import { clearMachineAlarm } from '../lib/alarm'
 import { droFeedUnitLabel, formatAxisCoord, formatFeedRate } from '../lib/units'
-import type { MachineState } from '../types'
+import { useControllerJobStarting } from '../lib/jobState'
 
 const ALARM_MESSAGES: Record<number, string> = {
   1: 'Hard limit triggered',
@@ -62,24 +62,26 @@ function useIsPortrait() {
   return portrait
 }
 
-function useMotionControlLock(state: MachineState) {
-  const [locked, setLocked] = useState(() => state === 'Run' || state === 'Hold')
+function useMotionControlLock(jobActive: boolean) {
+  const [locked, setLocked] = useState(jobActive)
 
   useEffect(() => {
-    if (state === 'Run' || state === 'Hold') {
+    if (jobActive) {
       setLocked(true)
       return
     }
 
     const timeoutId = window.setTimeout(() => setLocked(false), E_STOP_HIDE_DELAY_MS)
     return () => window.clearTimeout(timeoutId)
-  }, [state])
+  }, [jobActive])
 
   return locked
 }
 
 export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   const status = useMachineStore(s => s.status)
+  const controllerResetPending = useMachineStore(s => s.controllerResetPending)
+  const controllerJobStarting = useControllerJobStarting()
   const positionMode = useMachineStore(s => s.positionMode)
   const setPositionMode = useMachineStore(s => s.setPositionMode)
   const axes = useMachineStore(s => s.axes)
@@ -111,7 +113,9 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   }
 
   const visibleAxes = AXES.slice(0, axes)
-  const isJobActive = useMotionControlLock(status.state)
+  const isJobActive = useMotionControlLock(
+    status.state === 'Run' || status.state === 'Hold' || controllerJobStarting || controllerResetPending,
+  )
   const isHomeAllPending = pendingAxisAction?.kind === 'home' && pendingAxisAction.axis === HOME_ALL_ACTION_AXIS
   const shouldHideMotionControls = isJobActive && pendingAxisAction === null
   const areAxisButtonsDisabled = pendingAxisAction !== null

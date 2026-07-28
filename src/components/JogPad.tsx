@@ -4,7 +4,8 @@ import { useMachineStore } from '../store'
 import { loadPersistedJogFeed } from '../lib/jog'
 import { sendRaw, sendRealtime } from '../lib/ws'
 import { setLocalJogActive } from '../lib/jogWatchdog'
-import type { MachineState, Units } from '../types'
+import { useControllerJobStarting } from '../lib/jobState'
+import type { Units } from '../types'
 import {
   axisStepToCommand,
   displayToMm,
@@ -38,18 +39,18 @@ function sendJogCancel() {
   sendRealtime(0x85)
 }
 
-function useJobRunningWithLinger(state: MachineState) {
-  const [running, setRunning] = useState(() => state === 'Run' || state === 'Hold')
+function useJobRunningWithLinger(jobActive: boolean) {
+  const [running, setRunning] = useState(jobActive)
 
   useEffect(() => {
-    if (state === 'Run' || state === 'Hold') {
+    if (jobActive) {
       setRunning(true)
       return
     }
 
     const timeoutId = window.setTimeout(() => setRunning(false), JOB_HIDE_DELAY_MS)
     return () => window.clearTimeout(timeoutId)
-  }, [state])
+  }, [jobActive])
 
   return running
 }
@@ -834,6 +835,8 @@ function useKeyboardJog(continuous: boolean, canJog: boolean, xyFeed: number, zF
 
 export function JogPad() {
   const status = useMachineStore(s => s.status)
+  const controllerResetPending = useMachineStore(s => s.controllerResetPending)
+  const controllerJobStarting = useControllerJobStarting()
   const axes = useMachineStore(s => s.axes)
   const units = useMachineStore(s => s.units)
   const controllerSettings = useMachineStore(s => s.controllerSettings)
@@ -848,8 +851,9 @@ export function JogPad() {
   const [compact, setCompact] = useState(() => localStorage.getItem('jog.desktopStyle') === 'compact')
   const prevUnitsRef = useRef(units)
 
-  const canJog = status.state === 'Idle' || status.state === 'Jog'
-  const jobRunning = useJobRunningWithLinger(status.state)
+  const jobActive = status.state === 'Run' || status.state === 'Hold' || controllerJobStarting || controllerResetPending
+  const canJog = (status.state === 'Idle' || status.state === 'Jog') && !controllerJobStarting && !controllerResetPending
+  const jobRunning = useJobRunningWithLinger(jobActive)
   const { keyboardJog, setKeyboardJog, activeKeys } = useKeyboardJog(continuous, canJog, xyFeed, zFeed)
   const zSteps = linearBarSteps(units)
   const xyFeedMax = controllerSettings.maxRateX != null && controllerSettings.maxRateY != null
@@ -1072,8 +1076,7 @@ export function JogPad() {
                   setSpindleTarget(rpm)
                   setSelectedSpindlePreset(rpm)
                   if (spindleActive) {
-                    sendRaw(`M3 S${rpm}`)
-                    sendRealtime(0x99)
+                    if (sendRaw(`M3 S${rpm}`)) sendRealtime(0x99)
                   }
                 }}
                 className={`btn py-2 text-lg font-medium justify-center ${
@@ -1093,8 +1096,7 @@ export function JogPad() {
           {spindleActive ? (
             <button
               onClick={() => {
-                sendRaw('M5')
-                setSpindleOverrideState('off')
+                if (sendRaw('M5')) setSpindleOverrideState('off')
               }}
               className="btn w-full justify-center bg-danger/20 hover:bg-danger/30 text-danger border-danger/50"
             >
@@ -1104,8 +1106,7 @@ export function JogPad() {
           ) : (
             <button
               onClick={() => {
-                sendRaw(`M3 S${spindleTarget}`)
-                setSpindleOverrideState('on')
+                if (sendRaw(`M3 S${spindleTarget}`)) setSpindleOverrideState('on')
               }}
               className="btn w-full gap-1.5 justify-center bg-ok/20 hover:bg-ok/30 text-ok border-ok/50"
             >
@@ -1208,8 +1209,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
                   setSpindleTarget(rpm)
                   setSelectedSpindlePreset(rpm)
                   if (spindleActive) {
-                    sendRaw(`M3 S${rpm}`)
-                    sendRealtime(0x99)
+                    if (sendRaw(`M3 S${rpm}`)) sendRealtime(0x99)
                   }
                 }}
                 className={`btn font-medium justify-center ${isTablet ? 'text-lg py-2' : 'text-base py-2'} ${
@@ -1229,8 +1229,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
           {spindleActive ? (
             <button
               onClick={() => {
-                sendRaw('M5')
-                setSpindleOverrideState('off')
+                if (sendRaw('M5')) setSpindleOverrideState('off')
               }}
               className={`btn w-full justify-center bg-danger/20 hover:bg-danger/30 text-danger border-danger/50 ${isTablet ? 'h-12 text-lg' : ''}`}
             >
@@ -1240,8 +1239,7 @@ export function SpindlePanel({ className, isTablet }: { className?: string; isTa
           ) : (
             <button
               onClick={() => {
-                sendRaw(`M3 S${spindleTarget}`)
-                setSpindleOverrideState('on')
+                if (sendRaw(`M3 S${spindleTarget}`)) setSpindleOverrideState('on')
               }}
               className={`btn w-full gap-1.5 justify-center bg-ok/20 hover:bg-ok/30 text-ok border-ok/50 ${isTablet ? 'h-12 text-lg' : ''}`}
             >
@@ -1276,6 +1274,8 @@ export function OverridesPanel({ className, isTablet }: { className?: string; is
 
 export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } = {}) {
   const status = useMachineStore(s => s.status)
+  const controllerResetPending = useMachineStore(s => s.controllerResetPending)
+  const controllerJobStarting = useControllerJobStarting()
   const units = useMachineStore(s => s.units)
   const controllerSettings = useMachineStore(s => s.controllerSettings)
 
@@ -1316,8 +1316,9 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
     setZFeed(prev => Math.min(prev, zFeedMax))
   }, [zFeedMax])
 
-  const canJog = status.state === 'Idle' || status.state === 'Jog'
-  const jobRunning = useJobRunningWithLinger(status.state)
+  const jobActive = status.state === 'Run' || status.state === 'Hold' || controllerJobStarting || controllerResetPending
+  const canJog = (status.state === 'Idle' || status.state === 'Jog') && !controllerJobStarting && !controllerResetPending
+  const jobRunning = useJobRunningWithLinger(jobActive)
   const jogDisabled = !canJog || jobRunning
   const { keyboardJog, setKeyboardJog } = useKeyboardJog(continuous, canJog, xyFeed, zFeed)
   const commandStepSize = displayToMm(stepSize, units)
