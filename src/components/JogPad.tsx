@@ -60,6 +60,17 @@ function alwaysCapturePointer(e: React.PointerEvent) {
   e.currentTarget.setPointerCapture(e.pointerId)
 }
 
+/**
+ * Touch screens raise `contextmenu` on a long press, so holding a continuous
+ * jog control pops the browser menu on release. Spread this onto a jog
+ * container to swallow it - contextmenu bubbles, so children are covered too.
+ * CSS alone is not enough: `-webkit-touch-callout` only suppresses the iOS
+ * callout, and Chromium still fires the event.
+ */
+const noContextMenu = {
+  onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+}
+
 function arcPath(innerR: number, outerR: number, dir: number): string {
   const s = (dir - 0.5) * (Math.PI / 2)
   const e = (dir + 0.5) * (Math.PI / 2)
@@ -324,6 +335,7 @@ function JogRose({ xyFeed, continuous, disabled, isJogging, activeKeys, units }:
   return (
     <svg viewBox="-100 -100 200 200"
       style={{ touchAction: 'none' }}
+      {...noContextMenu}
       className={`w-full max-w-[280px] select-none ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
 
       <defs>
@@ -506,6 +518,7 @@ function AxisBar({ axis, color, steps, feed, continuous, disabled, activeKeys, u
   return (
     <svg viewBox="0 0 44 220"
       style={{ touchAction: 'none' }}
+      {...noContextMenu}
       className={`w-[50px] h-full max-h-[260px] select-none shrink-0
                   ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
 
@@ -1455,7 +1468,7 @@ export function TabletJogPad({ onSwitchStyle }: { onSwitchStyle?: () => void } =
               </svg>
             </button>
           )}
-          <div className={`relative flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:h-[52vw] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none] ${jogDisabled ? 'pointer-events-none' : ''}`}>
+          <div {...noContextMenu} className={`relative flex flex-row items-stretch justify-center portrait:h-[320px] portrait:gap-6 landscape:gap-5 landscape:w-full landscape:aspect-[7/5] landscape:max-h-full max-sm:portrait:w-full max-sm:portrait:h-[52vw] max-sm:portrait:gap-2 select-none [-webkit-touch-callout:none] ${jogDisabled ? 'pointer-events-none' : ''}`}>
           <div className="grid grid-cols-3 grid-rows-3 gap-2 sm:gap-4 portrait:gap-4 max-sm:portrait:gap-2 landscape:shrink-0 aspect-square">
             <div />
             <button
