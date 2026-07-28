@@ -29,8 +29,7 @@ export function JobControl() {
   function pause()      { sendRealtime(0x21) }
   function softReset()  {
     if (!confirm('Abort job and reset?')) return
-    cancelTrackedJob('controller')
-    sendRealtime(0x18)
+    if (sendRealtime(0x18)) cancelTrackedJob('controller')
   }
   function clearAlarm() { clearMachineAlarm(status.alarmCode) }
 

@@ -3655,8 +3655,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               onClick={() => {
                 if (senderActive) abortSender()
                 else {
-                  cancelTrackedJob('controller')
-                  sendRealtime(0x18)
+                  if (sendRealtime(0x18)) cancelTrackedJob('controller')
                 }
               }}
             >
