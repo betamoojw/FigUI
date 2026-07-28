@@ -99,8 +99,18 @@ interface CubeFaceData {
   snapPhi: number
 }
 
+interface CubeCornerFacetData {
+  label: string
+  depth: number
+  projectedCorners: Array<{ x: number; y: number }>
+  isVisible: boolean
+  snapTheta: number
+  snapPhi: number
+}
+
 interface ViewCubeData {
   faces: CubeFaceData[]
+  cornerFacets: CubeCornerFacetData[]
   axisVectors: AxisIndicatorVector[]
   axisOrigin: { x: number; y: number }
 }
@@ -593,6 +603,9 @@ function getClipBounds(modelBounds: GCodeModel['bounds'] | null) {
 
 
 const HALF_PI = Math.PI / 2
+const ISOMETRIC_PHI = Math.acos(1 / Math.sqrt(3))
+const VIEW_CUBE_CHAMFER = 0.34
+const VIEW_CUBE_AXIS_EXTENSION = 0.36
 
 function get3DViewCubeData(orbit: OrbitState, up: Vector3, cx: number, cy: number, s: number): ViewCubeData {
   const { forward, right, screenUp } = getOrbitCameraBasis(orbit, up)
@@ -614,12 +627,13 @@ function get3DViewCubeData(orbit: OrbitState, up: Vector3, cx: number, cy: numbe
     {
       label: 'Top', n: { x: 0, y: 0, z: 1 },
       corners: [{ x: 1, y: 1, z: 1 }, { x: -1, y: 1, z: 1 }, { x: -1, y: -1, z: 1 }, { x: 1, y: -1, z: 1 }],
-      snapTheta: orbit.theta, snapPhi: 0.02,
+      // Keep the world axes upright rather than carrying over the last orbit's roll.
+      snapTheta: -HALF_PI, snapPhi: 0.02,
     },
     {
       label: 'Bottom', n: { x: 0, y: 0, z: -1 },
       corners: [{ x: 1, y: -1, z: -1 }, { x: -1, y: -1, z: -1 }, { x: -1, y: 1, z: -1 }, { x: 1, y: 1, z: -1 }],
-      snapTheta: orbit.theta, snapPhi: Math.PI - 0.02,
+      snapTheta: HALF_PI, snapPhi: Math.PI - 0.02,
     },
     {
       label: 'Front', n: { x: 0, y: -1, z: 0 },
@@ -645,15 +659,24 @@ function get3DViewCubeData(orbit: OrbitState, up: Vector3, cx: number, cy: numbe
 
   const faces: CubeFaceData[] = faceDefs.map(def => {
     const depth = dotProduct(def.n, forward)
-    const projectedCorners = def.corners.map(project)
+    const projectedCorners = def.corners.flatMap((corner, index, allCorners) => {
+      const previous = allCorners[(index + allCorners.length - 1) % allCorners.length]
+      const next = allCorners[(index + 1) % allCorners.length]
+      return [previous, next].map(neighbor => project({
+        x: corner.x + (neighbor.x - corner.x) * VIEW_CUBE_CHAMFER,
+        y: corner.y + (neighbor.y - corner.y) * VIEW_CUBE_CHAMFER,
+        z: corner.z + (neighbor.z - corner.z) * VIEW_CUBE_CHAMFER,
+      }))
+    })
+    const labelCorners = def.corners.map(project)
     const projectedCenter = project(def.n)
     const labelXAxis = {
-      x: ((projectedCorners[0].x - projectedCorners[1].x) + (projectedCorners[3].x - projectedCorners[2].x)) / 4,
-      y: ((projectedCorners[0].y - projectedCorners[1].y) + (projectedCorners[3].y - projectedCorners[2].y)) / 4,
+      x: ((labelCorners[0].x - labelCorners[1].x) + (labelCorners[3].x - labelCorners[2].x)) / 4,
+      y: ((labelCorners[0].y - labelCorners[1].y) + (labelCorners[3].y - labelCorners[2].y)) / 4,
     }
     const labelYAxis = {
-      x: ((projectedCorners[2].x - projectedCorners[1].x) + (projectedCorners[3].x - projectedCorners[0].x)) / 4,
-      y: ((projectedCorners[2].y - projectedCorners[1].y) + (projectedCorners[3].y - projectedCorners[0].y)) / 4,
+      x: ((labelCorners[2].x - labelCorners[1].x) + (labelCorners[3].x - labelCorners[0].x)) / 4,
+      y: ((labelCorners[2].y - labelCorners[1].y) + (labelCorners[3].y - labelCorners[0].y)) / 4,
     }
 
     return {
@@ -668,6 +691,39 @@ function get3DViewCubeData(orbit: OrbitState, up: Vector3, cx: number, cy: numbe
     }
   }).sort((a, b) => b.depth - a.depth)
 
+  // Each actual chamfer plane is an isometric-view target, so there is no
+  // separate control layer competing with the cube itself.
+  const projectedCorners = [
+    { x: -1, y: -1, z: -1 }, { x: -1, y: -1, z: 1 },
+    { x: -1, y: 1, z: -1 }, { x: -1, y: 1, z: 1 },
+    { x: 1, y: -1, z: -1 }, { x: 1, y: -1, z: 1 },
+    { x: 1, y: 1, z: -1 }, { x: 1, y: 1, z: 1 },
+  ]
+    .map(corner => {
+      const facetCorners = [
+        { x: corner.x * (1 - VIEW_CUBE_CHAMFER), y: corner.y, z: corner.z },
+        { x: corner.x, y: corner.y * (1 - VIEW_CUBE_CHAMFER), z: corner.z },
+        { x: corner.x, y: corner.y, z: corner.z * (1 - VIEW_CUBE_CHAMFER) },
+      ]
+      return {
+        corner,
+        depth: dotProduct(corner, forward),
+        facetCorners: facetCorners.map(project),
+      }
+    })
+
+  const cornerFacets: CubeCornerFacetData[] = projectedCorners
+    .map(corner => ({
+      label: `${corner.corner.x > 0 ? '+X' : '-X'} ${corner.corner.y > 0 ? '+Y' : '-Y'} ${corner.corner.z > 0 ? '+Z' : '-Z'}`,
+      depth: corner.depth,
+      projectedCorners: corner.facetCorners,
+      // Include silhouette facets, but exclude back-facing planes.
+      isVisible: corner.depth < 0.05,
+      snapTheta: Math.atan2(corner.corner.y, corner.corner.x),
+      snapPhi: corner.corner.z > 0 ? ISOMETRIC_PHI : Math.PI - ISOMETRIC_PHI,
+    }))
+    .sort((a, b) => b.depth - a.depth)
+
   const axisOrigin3D = { x: -1, y: -1, z: -1 }
   const axisOrigin = project(axisOrigin3D)
   const axisEdgeDefs: Array<{
@@ -675,9 +731,9 @@ function get3DViewCubeData(orbit: OrbitState, up: Vector3, cx: number, cy: numbe
     color: string
     end: { x: number; y: number; z: number }
   }> = [
-    { label: 'X', color: AXIS_X_COLOR, end: { x: 1, y: -1, z: -1 } },
-    { label: 'Y', color: AXIS_Y_COLOR, end: { x: -1, y: 1, z: -1 } },
-    { label: 'Z', color: AXIS_Z_COLOR, end: { x: -1, y: -1, z: 1 } },
+    { label: 'X', color: AXIS_X_COLOR, end: { x: 1 + VIEW_CUBE_AXIS_EXTENSION, y: -1, z: -1 } },
+    { label: 'Y', color: AXIS_Y_COLOR, end: { x: -1, y: 1 + VIEW_CUBE_AXIS_EXTENSION, z: -1 } },
+    { label: 'Z', color: AXIS_Z_COLOR, end: { x: -1, y: -1, z: 1 + VIEW_CUBE_AXIS_EXTENSION } },
   ]
 
   const axisVectors = axisEdgeDefs.map(axis => {
@@ -700,7 +756,7 @@ function get3DViewCubeData(orbit: OrbitState, up: Vector3, cx: number, cy: numbe
     }
   }).sort((a, b) => a.depth - b.depth)
 
-  return { faces, axisVectors, axisOrigin }
+  return { faces, cornerFacets, axisVectors, axisOrigin }
 }
 
 function getArrowHeadPoints(startX: number, startY: number, endX: number, endY: number, size: number) {
@@ -1229,6 +1285,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [is3D, setIs3D] = useState(false)
   const [projectionMode, setProjectionMode] = useState<ProjectionMode>('orthographic')
   const [dragMode, setDragMode] = useState<DragMode>('orbit')
+  const [hoveredViewTarget, setHoveredViewTarget] = useState<string | null>(null)
   const rendererRef = useRef<WebGLRenderer | null>(null)
   const cameraRef = useRef<Camera>({
     position: { x: 100, y: 100, z: 100 },
@@ -2821,7 +2878,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     scheduleRender()
   }
 
-  const VCX = 45, VCY = 45, CUBE_S = 16
+  const VCX = 54, VCY = 54, CUBE_S = 19
   const viewCubeData = is3D ? get3DViewCubeData(orbitState, cameraRef.current.up, VCX, VCY, CUBE_S) : null
 
   return (
@@ -3241,26 +3298,32 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
         {is3D ? (
           <svg
             className="absolute bottom-3 left-3 select-none"
-            width="90"
-            height="90"
-            viewBox="0 0 90 90"
+            width="108"
+            height="108"
+            viewBox="0 0 108 108"
             style={{ overflow: 'visible' }}
-            aria-hidden="true"
+            role="group"
+            aria-label="3D view orientation"
           >
             {viewCubeData?.faces.map(face => {
               const points = face.projectedCorners.map(p => `${p.x},${p.y}`).join(' ')
               const visF = (-face.depth + 1) / 2
               const fillAlpha = 0.38 + visF * 0.38
+              const targetId = `face-${face.label}`
+              const isHovered = hoveredViewTarget === targetId
               return (
                 <g key={face.label}>
+                  <title>{`View ${face.label}`}</title>
                   <polygon
                     points={points}
-                    fill={`rgba(170, 176, 186, ${fillAlpha})`}
-                    stroke="rgba(92, 98, 108, 0.72)"
-                    strokeWidth="0.9"
+                    fill={isHovered ? 'rgba(42, 194, 156, 0.88)' : `rgba(170, 176, 186, ${fillAlpha})`}
+                    stroke={isHovered ? 'rgba(208, 255, 241, 0.98)' : 'rgba(92, 98, 108, 0.72)'}
+                    strokeWidth={isHovered ? '1.3' : '0.9'}
                     strokeLinejoin="round"
                     style={{ cursor: face.isVisible ? 'pointer' : 'default', pointerEvents: face.isVisible ? 'auto' : 'none' }}
                     onClick={face.isVisible ? () => snapOrbitToView(face.snapTheta, face.snapPhi) : undefined}
+                    onMouseEnter={face.isVisible ? () => setHoveredViewTarget(targetId) : undefined}
+                    onMouseLeave={face.isVisible ? () => setHoveredViewTarget(null) : undefined}
                   />
                   {face.isVisible && (
                     <text
@@ -3278,6 +3341,27 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
                       {face.label}
                     </text>
                   )}
+                </g>
+              )
+            })}
+
+            {viewCubeData?.cornerFacets.map(facet => {
+              const targetId = `corner-${facet.label}`
+              const isHovered = hoveredViewTarget === targetId
+              return facet.isVisible && (
+                <g key={facet.label}>
+                  <title>{`View isometric ${facet.label}`}</title>
+                  <polygon
+                    points={facet.projectedCorners.map(point => `${point.x},${point.y}`).join(' ')}
+                    fill={isHovered ? 'rgba(42, 194, 156, 0.94)' : 'rgba(218, 225, 234, 0.8)'}
+                    stroke={isHovered ? 'rgba(208, 255, 241, 0.98)' : 'rgba(92, 98, 108, 0.72)'}
+                    strokeWidth={isHovered ? '1.3' : '0.9'}
+                    strokeLinejoin="round"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => snapOrbitToView(facet.snapTheta, facet.snapPhi)}
+                    onMouseEnter={() => setHoveredViewTarget(targetId)}
+                    onMouseLeave={() => setHoveredViewTarget(null)}
+                  />
                 </g>
               )
             })}
