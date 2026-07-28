@@ -1236,7 +1236,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const [showTool, setShowTool] = useState(true)
   const [hiddenTools, setHiddenTools] = useState<Set<number>>(() => new Set())
   const [showToolPathMenu, setShowToolPathMenu] = useState(false)
-  const [fileDragStatus, setFileDragStatus] = useState<'idle' | 'valid' | 'invalid'>('idle')
+  const [fileDragStatus, setFileDragStatus] = useState<'idle' | 'valid' | 'invalid' | 'unknown'>('idle')
   const [senderExecutionProgressPercent, setSenderExecutionProgressPercent] = useState<number | null>(null)
   const showRapidsRef = useRef(true)
   const showToolRef = useRef(true)
@@ -2729,33 +2729,44 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     needsFitRef.current = true
   }
 
-  function getDraggedFileStatus(dataTransfer: DataTransfer): 'valid' | 'invalid' {
+  function getDraggedFileStatus(dataTransfer: DataTransfer): 'valid' | 'invalid' | 'unknown' {
     const files = Array.from(dataTransfer.files ?? [])
     if (files.length) return isGCodeFileName(files[0].name) ? 'valid' : 'invalid'
 
     const fileItems = Array.from(dataTransfer.items ?? []).filter(item => item.kind === 'file')
-    if (!fileItems.length) return 'invalid'
+    // Safari intentionally withholds both files and items until the actual
+    // drop. The filename cannot be checked yet, but rejecting the drag here
+    // prevents Safari from delivering the drop event at all.
+    if (!fileItems.length) return 'unknown'
 
     const namedFiles = fileItems
       .map(item => item.getAsFile())
       .filter((file): file is File => !!file && !!file.name)
-    if (!namedFiles.length) return 'valid'
+    if (!namedFiles.length) return 'unknown'
     return isGCodeFileName(namedFiles[0].name) ? 'valid' : 'invalid'
+  }
+
+  function hasDraggedFiles(dataTransfer: DataTransfer) {
+    // Array.from also supports Safari's legacy DOMStringList implementation.
+    return Array.from(dataTransfer.types ?? []).includes('Files')
   }
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault()
-    setFileDragStatus('idle')
     const file = e.dataTransfer.files?.[0]
-    if (!file || !isGCodeFileName(file.name)) return
+    if (!file || !isGCodeFileName(file.name)) {
+      setFileDragStatus('invalid')
+      return
+    }
+    setFileDragStatus('idle')
     void loadLocalFile(file)
   }
 
   function onDragOver(e: React.DragEvent) {
     e.preventDefault()
-    if (e.dataTransfer.types.includes('Files')) {
+    if (hasDraggedFiles(e.dataTransfer)) {
       const status = getDraggedFileStatus(e.dataTransfer)
-      e.dataTransfer.dropEffect = status === 'valid' && !isRunning ? 'copy' : 'none'
+      e.dataTransfer.dropEffect = status !== 'invalid' && !isRunning ? 'copy' : 'none'
       setFileDragStatus(status)
     }
   }
@@ -2861,7 +2872,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   }
 
   const isFileDragging = fileDragStatus !== 'idle'
-  const isValidFileDragging = fileDragStatus === 'valid' && !isRunning
+  const isValidFileDragging = (fileDragStatus === 'valid' || fileDragStatus === 'unknown') && !isRunning
   const hasLoadedSource = !!sourceText && !!fileName
   const toolList = model?.tools ?? []
   const showToolPathControls = toolList.length > 1
@@ -3044,19 +3055,21 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
 
         {isFileDragging && !isRunning && (
           <div className={`absolute inset-3 z-40 flex items-center justify-center rounded-xl border-2 border-dashed pointer-events-none backdrop-blur-sm ${
-            fileDragStatus === 'valid'
+            fileDragStatus !== 'invalid'
               ? 'border-info bg-surface/90'
               : 'border-danger bg-surface/95'
           }`}>
-            <div className={`text-center ${fileDragStatus === 'valid' ? 'text-info' : 'text-danger'}`}>
+            <div className={`text-center ${fileDragStatus !== 'invalid' ? 'text-info' : 'text-danger'}`}>
               <FilePlus size={34} className="mx-auto mb-2" />
               <div className="font-semibold">
-                {fileDragStatus === 'valid' ? 'Drop G-code to preview and stream' : 'Unsupported file type'}
+                {fileDragStatus === 'invalid'
+                  ? 'Unsupported file type'
+                  : 'Drop G-code to preview and stream'}
               </div>
               <div className="mt-1 text-sm text-text-muted">
-                {fileDragStatus === 'valid'
-                  ? 'The file stays in this browser.'
-                  : `Use ${GCODE_EXTENSIONS_PREVIEW} files.`}
+                {fileDragStatus === 'invalid'
+                  ? `Use ${GCODE_EXTENSIONS_PREVIEW} files.`
+                  : 'The file stays in this browser.'}
               </div>
             </div>
           </div>
