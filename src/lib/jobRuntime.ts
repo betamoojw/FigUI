@@ -16,7 +16,7 @@ export interface JobTimingEstimate {
   /** Motion time only; fixed delays are stored separately. */
   segmentSeconds: Float64Array
   delayBeforeSegmentSeconds: Float64Array
-  /** Start time of every segment, with the final entry including trailing waits. */
+  /** Start time of every segment; the final entry is the end of the last motion, excluding trailing waits. */
   timelineSeconds: Float64Array
   trailingDelaySeconds: number
   totalSeconds: number

@@ -1822,6 +1822,10 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const resumeSender = useGCodeSenderStore(s => s.resume)
   const abortSender = useGCodeSenderStore(s => s.abort)
   const dismissSender = useGCodeSenderStore(s => s.dismiss)
+  const startTrackedJob = useGCodeStore(s => s.startTrackedJob)
+  const cancelTrackedJob = useGCodeStore(s => s.cancelTrackedJob)
+  const finishedJobElapsedMs = useGCodeStore(s => s.finishedJobElapsedMs)
+  const dismissFinishedJobNotice = useGCodeStore(s => s.dismissFinishedJobNotice)
   const senderActive = senderPhase === 'streaming' || senderPhase === 'paused' || senderPhase === 'draining'
   const runtime = useJobRuntimeEstimate(
     status,
@@ -1845,8 +1849,8 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const handleStartWithoutPreview = useCallback(() => {
     const path = pendingPath
     if (!path) return
-    cancelAndStartJob(path)
-  }, [pendingPath, cancelAndStartJob])
+    if (cancelAndStartJob(path)) startTrackedJob('controller')
+  }, [pendingPath, cancelAndStartJob, startTrackedJob])
 
   const isViewerStartBlocked = loading || isProcessing2D || pendingPath !== null
   const is3DToggleDisabled = pendingPath !== null || isProcessing2D || (!!model && !is3DReady)
@@ -2756,6 +2760,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     const file = e.dataTransfer.files?.[0]
     if (!file || !isGCodeFileName(file.name)) {
       setFileDragStatus('invalid')
+      window.setTimeout(() => setFileDragStatus('idle'), 2000)
       return
     }
     setFileDragStatus('idle')
@@ -2774,7 +2779,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   function startLocalSenderWithWarning() {
     if (!sourceText || !fileName) return
     if (localStorage.getItem(LOCAL_SENDER_WARNING_ACK_KEY) === 'true') {
-      startSender(sourceText, fileName)
+      if (startSender(sourceText, fileName)) startTrackedJob('local')
       return
     }
     setShowLocalSenderWarning(true)
@@ -2784,7 +2789,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     if (!sourceText || !fileName) return
     localStorage.setItem(LOCAL_SENDER_WARNING_ACK_KEY, 'true')
     setShowLocalSenderWarning(false)
-    startSender(sourceText, fileName)
+    if (startSender(sourceText, fileName)) startTrackedJob('local')
   }
 
   useEffect(() => {
@@ -3475,6 +3480,23 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           </div>
         )}
 
+        {finishedJobElapsedMs != null && (
+          <div className="rounded border border-ok/40 bg-ok/10 px-3 py-2" role="status" aria-live="polite">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-ok">
+                Job finished in <span className="font-mono font-semibold">{formatRuntime(finishedJobElapsedMs / 1000)}</span>
+              </span>
+              <button
+                className="text-text-dim hover:text-text-primary"
+                onClick={dismissFinishedJobNotice}
+                aria-label="Dismiss job finished message"
+                title="Dismiss"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
         {(senderPhase === 'error') && (
           <div className={`rounded border px-3 py-2 ${senderPhase === 'error' ? 'border-danger/40 bg-danger/10' : 'border-info/30 bg-info/5'}`}>
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -3582,7 +3604,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               className={`btn btn-ok-solid gap-2 justify-center font-bold ${isTablet ? 'text-xl py-3' : 'text-base'} flex-1`}
               onClick={() => {
                 if (isLocalFile) startLocalSenderWithWarning()
-                else if (loadedPath) sendRaw(`$SD/Run=${loadedPath}`)
+                else if (loadedPath && sendRaw(`$SD/Run=${loadedPath}`)) startTrackedJob('controller')
               }}
               disabled={(!loadedPath && !isLocalFile) || !connected || status.state !== 'Idle' || isViewerStartBlocked}
               title={isViewerStartBlocked
@@ -3611,7 +3633,16 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
             </button>
           )}
           {(isJobRunning || isJobHeld) && (
-            <button className={`btn btn-danger-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`} onClick={() => senderActive ? abortSender() : sendRealtime(0x18)}>
+            <button
+              className={`btn btn-danger-solid gap-1.5 ${isTablet ? 'text-xl py-3' : 'text-sm'} justify-center flex-1`}
+              onClick={() => {
+                if (senderActive) abortSender()
+                else {
+                  cancelTrackedJob('controller')
+                  sendRealtime(0x18)
+                }
+              }}
+            >
               <Square size={isTablet ? 18 : 13} />
               Abort
             </button>

@@ -14,6 +14,7 @@ export function JobControl() {
   const { state, sdFilename } = status
   const runtime = useJobRuntimeEstimate(status, model, controllerSettings, loadedPath, fileName)
   const progressPercent = runtime.progressPercent
+  const cancelTrackedJob = useGCodeStore(s => s.cancelTrackedJob)
 
   const isRunning = state === 'Run'
   const isHold    = state === 'Hold'
@@ -23,7 +24,11 @@ export function JobControl() {
 
   function resume()     { sendRealtime(0x7E) }
   function pause()      { sendRealtime(0x21) }
-  function softReset()  { if (confirm('Abort job and reset?')) sendRealtime(0x18) }
+  function softReset()  {
+    if (!confirm('Abort job and reset?')) return
+    cancelTrackedJob('controller')
+    sendRealtime(0x18)
+  }
   function clearAlarm() { clearMachineAlarm(status.alarmCode) }
 
   if (!hasSd && !isAlarm && !isHold && !isDoor) return null

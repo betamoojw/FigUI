@@ -87,6 +87,9 @@ export function App() {
   const senderError = useGCodeSenderStore(s => s.error)
   const senderFailureLine = useGCodeSenderStore(s => s.failureLine)
   const senderFailureLineSource = useGCodeSenderStore(s => s.failureLineSource)
+  const activeJobSource = useGCodeStore(s => s.trackedJob?.source)
+  const finishTrackedJob = useGCodeStore(s => s.finishTrackedJob)
+  const cancelTrackedJob = useGCodeStore(s => s.cancelTrackedJob)
   const [phase, setPhase]   = useState<Phase>('connecting')
   const [errMsg, setErrMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -119,6 +122,28 @@ export function App() {
   const restartSawDisconnect = useRef(false)
   const [startupErrors, setStartupErrors] = useState<string[]>([])
   const [startupErrorsOpen, setStartupErrorsOpen] = useState(false)
+  const controllerJobWasRunningRef = useRef(false)
+
+  useEffect(() => {
+    if (activeJobSource !== 'local') return
+    if (senderPhase === 'completed') finishTrackedJob('local')
+    else if (senderPhase === 'aborted' || senderPhase === 'error') cancelTrackedJob('local')
+  }, [activeJobSource, senderPhase, finishTrackedJob, cancelTrackedJob])
+
+  useEffect(() => {
+    if (activeJobSource !== 'controller') {
+      controllerJobWasRunningRef.current = false
+      return
+    }
+
+    if (machineState === 'Run' || machineState === 'Hold') {
+      controllerJobWasRunningRef.current = true
+    } else if (machineState === 'Idle' && controllerJobWasRunningRef.current) {
+      finishTrackedJob('controller')
+    } else if (machineState === 'Alarm') {
+      cancelTrackedJob('controller')
+    }
+  }, [activeJobSource, machineState, finishTrackedJob, cancelTrackedJob])
 
   useEffect(() => {
     fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
@@ -489,7 +514,6 @@ export function App() {
         onSettingsClick={() => setSettingsOpen(true)}
         onAboutClick={() => setAboutOpen(true)}
       />
-
 
       {fullPlugin && (
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-3">

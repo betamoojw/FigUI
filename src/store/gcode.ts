@@ -22,6 +22,8 @@ export interface Geometry3D extends Built3DGeometry {
   showRapids: boolean
 }
 
+type TrackedJobSource = 'local' | 'controller'
+
 interface GCodeStore {
   // Identity
   loadedPath: string | null
@@ -54,6 +56,10 @@ interface GCodeStore {
   processing3DProgress: number
   is3DReady: boolean
 
+  // Job completion feedback
+  trackedJob: { source: TrackedJobSource; startedAt: number } | null
+  finishedJobElapsedMs: number | null
+
   // Actions
   loadFile: (path: string) => Promise<void>
   loadFromText: (
@@ -62,7 +68,11 @@ interface GCodeStore {
     path?: string | null,
     restartSource?: GCodeStore['restartSource'],
   ) => Promise<void>
-  cancelAndStartJob: (path: string) => void
+  cancelAndStartJob: (path: string) => boolean
+  startTrackedJob: (source: TrackedJobSource) => void
+  finishTrackedJob: (source: TrackedJobSource) => void
+  cancelTrackedJob: (source?: TrackedJobSource) => void
+  dismissFinishedJobNotice: () => void
   setShowRapids: (v: boolean) => void
   setActiveSourceLine: (line: number | null) => void
   clear: () => void
@@ -168,11 +178,14 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
   isProcessing3D: false,
   processing3DProgress: 0,
   is3DReady: false,
+  trackedJob: null,
+  finishedJobElapsedMs: null,
 
   loadFile: async (path: string) => {
     if (isLoadBlockedByMachineState()) return
     if (activeLoadPath === path) return
 
+    set({ finishedJobElapsedMs: null })
     abortInFlight()
     activeLoadPath = path
     const requestId = ++loadRequestId
@@ -314,6 +327,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
 
   loadFromText: async (text: string, name: string, path = null, restartSource = null) => {
     if (isLoadBlockedByMachineState()) return
+    set({ finishedJobElapsedMs: null })
     abortInFlight()
     const requestId = ++loadRequestId
 
@@ -400,6 +414,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
 
   cancelAndStartJob: (path: string) => {
     // Stop any in-flight download immediately. The ESP32 must not be serving a
+    set({ finishedJobElapsedMs: null })
     abortInFlight()
     set({
       loading: false,
@@ -420,8 +435,30 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       geometry3D: null,
       is3DReady: false,
     })
-    sendRaw(`$SD/Run=${path}`)
+    return sendRaw(`$SD/Run=${path}`)
   },
+
+  startTrackedJob: source => set({
+    trackedJob: { source, startedAt: Date.now() },
+    finishedJobElapsedMs: null,
+  }),
+
+  finishTrackedJob: source => {
+    const trackedJob = get().trackedJob
+    if (!trackedJob || trackedJob.source !== source) return
+    set({
+      trackedJob: null,
+      finishedJobElapsedMs: Math.max(0, Date.now() - trackedJob.startedAt),
+    })
+  },
+
+  cancelTrackedJob: source => {
+    const trackedJob = get().trackedJob
+    if (source && trackedJob?.source !== source) return
+    set({ trackedJob: null })
+  },
+
+  dismissFinishedJobNotice: () => set({ finishedJobElapsedMs: null }),
 
   setShowRapids: (v: boolean) => {
     if (get().showRapids === v) return
