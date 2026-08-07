@@ -21,10 +21,31 @@ class TestDocument extends EventTarget {
   documentElement = { classList: { add() {}, remove() {} } }
 }
 
+class FakeBroadcastChannel {
+  static channels = new Map<string, Set<FakeBroadcastChannel>>()
+  onmessage: ((event: { data: unknown }) => void) | null = null
+
+  constructor(readonly name: string) {
+    const peers = FakeBroadcastChannel.channels.get(name) ?? new Set()
+    peers.add(this)
+    FakeBroadcastChannel.channels.set(name, peers)
+  }
+
+  postMessage(data: unknown) {
+    for (const peer of FakeBroadcastChannel.channels.get(this.name) ?? []) {
+      if (peer !== this) peer.onmessage?.({ data })
+    }
+  }
+
+  close() {
+    FakeBroadcastChannel.channels.get(this.name)?.delete(this)
+  }
+}
+
 const testDocument = new TestDocument()
 Object.assign(globalThis, {
   document: testDocument,
-  window: new EventTarget(),
+  window: Object.assign(new EventTarget(), { BroadcastChannel: FakeBroadcastChannel }),
   localStorage: new MemoryStorage(),
   sessionStorage: new MemoryStorage(),
   requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 0),
@@ -46,12 +67,14 @@ class FakeWebSocket {
   machineState = 'Idle'
   reportInterval = 750
   supportsReportInterval = true
+  url = ''
   onopen: (() => void) | null = null
   onclose: ((event: { code: number; reason: string }) => void) | null = null
   onerror: (() => void) | null = null
   onmessage: ((event: { data: string | ArrayBuffer }) => void) | null = null
 
-  constructor(_url: string, _protocol: string) {
+  constructor(url: string, _protocol: string) {
+    this.url = url
     FakeWebSocket.instance = this
     queueMicrotask(() => {
       this.readyState = FakeWebSocket.OPEN
@@ -101,6 +124,18 @@ const { useGCodeSenderStore } = await import('../src/store/gcodeSender')
 
 await ws.connect('fluidnc.test')
 const socket = FakeWebSocket.instance!
+assert.equal(
+  new URL(socket.url).searchParams.get('independent_session'),
+  '1',
+  'websocket must opt into a per-tab FluidNC session',
+)
+let sessionTakeovers = 0
+const stopWatchingTakeovers = ws.onSessionTaken(() => { sessionTakeovers++ })
+const secondTab = new FakeBroadcastChannel('fluidui-tab-coordination-v1')
+secondTab.postMessage('tab-active')
+assert.equal(sessionTakeovers, 1, 'a newly active browser tab must preserve FluidNC session-takeover signaling')
+stopWatchingTakeovers()
+secondTab.close()
 useMachineStore.getState().updateStatus({ state: 'Idle' })
 await delay(300)
 

@@ -189,6 +189,10 @@ type SoftResetHandler = () => void
 const softResetHandlers = new Set<SoftResetHandler>()
 type SessionTakenHandler = () => void
 const sessionTakenHandlers = new Set<SessionTakenHandler>()
+const TAB_COORDINATION_CHANNEL = 'fluidui-tab-coordination-v1'
+const TAB_ACTIVE_MESSAGE = 'tab-active'
+let tabCoordinationChannel: BroadcastChannel | null = null
+let announcedThisPage = false
 
 export const getPageId = () => pageId
 
@@ -208,6 +212,25 @@ export function onSessionTaken(fn: SessionTakenHandler): () => void {
   return () => { sessionTakenHandlers.delete(fn) }
 }
 
+function notifySessionTaken() {
+  sessionTakenHandlers.forEach(fn => fn())
+}
+
+function announceActiveTab() {
+  if (announcedThisPage) return
+  announcedThisPage = true
+
+  // Portability FluidNC can give each tab an independent websocket, but
+  // doing so suppresses its same-cookie activeID notification. Preserve that
+  // within this browser so an older tab can stop a local stream.
+  if (typeof window.BroadcastChannel !== 'function') return
+  tabCoordinationChannel ??= new window.BroadcastChannel(TAB_COORDINATION_CHANNEL)
+  tabCoordinationChannel.onmessage = event => {
+    if (event.data === TAB_ACTIVE_MESSAGE) notifySessionTaken()
+  }
+  tabCoordinationChannel.postMessage(TAB_ACTIVE_MESSAGE)
+}
+
 const LIVENESS_CHECK_MS = 2000
 const LIVENESS_TIMEOUT_MS = 12000
 const OPEN_TIMEOUT_MS = 6000
@@ -225,9 +248,10 @@ export function connect(host: string): Promise<void> {
     const myGen = generation
 
     let ws: WebSocket
-    const url = host.includes('/') ? `ws://${host}` : `ws://${host}/`
+    const url = new URL(host.includes('/') ? `ws://${host}` : `ws://${host}/`)
+    url.searchParams.set('independent_session', '1')
     try {
-      ws = new WebSocket(url, 'arduino')
+      ws = new WebSocket(url.toString(), 'arduino')
     } catch (e) {
       reject(e instanceof Error ? e : new Error('WebSocket constructor failed'))
       return
@@ -261,6 +285,7 @@ export function connect(host: string): Promise<void> {
       startLivenessWatchdog()
       startStatusPoll()
       startGcStatePoll()
+      announceActiveTab()
 
       resolve()
     }
@@ -290,7 +315,7 @@ export function connect(host: string): Promise<void> {
         settled = true
         clearTimeout(openTimeout)
         try { ws.close() } catch { /* noop */ }
-        reject(new Error(`WebSocket error connecting to ${url}`))
+        reject(new Error(`WebSocket error connecting to ${url.toString()}`))
       }
     }
 
@@ -460,7 +485,7 @@ function handleLine(line: string) {
   if (line.startsWith('currentID:')) { pageId = line.slice(10); persistPageId(); return }
   if (line.startsWith('CURRENT_ID:')) { pageId = line.slice(11); persistPageId(); return }
   if (line.startsWith('activeID:') || line.startsWith('ACTIVE_ID:')) {
-    sessionTakenHandlers.forEach(fn => fn())
+    notifySessionTaken()
     return
   }
   if (line === 'PING' || line.startsWith('PING:')) {
