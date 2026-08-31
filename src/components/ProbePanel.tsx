@@ -9,6 +9,7 @@ import {
   suspendBackgroundTraffic,
 } from '../lib/ws'
 import { useMachineStore } from '../store'
+import { useManualAtcStore } from '../store/manualAtc'
 import { displayToMm, feedUnitLabel, linearUnitLabel, mmToDisplay } from '../lib/units'
 
 type Axis = 'X' | 'Y' | 'Z'
@@ -309,6 +310,7 @@ function toDisplayInput(value: number, units: 'mm' | 'in', decimals: number) {
 export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean; embedded?: boolean }) {
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
   const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
+  const hasManualATC = useMachineStore(s => s.controllerSettings.hasManualATC === true)
   const hasProbingInput = reportedHasProbe === true || reportedHasToolsetter === true
   const toolsetterOnly = reportedHasProbe === false && reportedHasToolsetter === true
   const [open, setOpen] = useState(embedded)
@@ -328,6 +330,8 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
   const status = useMachineStore(s => s.status)
   const units = useMachineStore(s => s.units)
   const connected = useMachineStore(s => s.connected)
+  const resetToolReference = useManualAtcStore(s => s.resetReference)
+  const completeReferenceSetup = useManualAtcStore(s => s.completeReferenceSetup)
   const canProbe = connected && status.state === 'Idle'
 
   function updateRun(next: RunningCycle | null) {
@@ -427,7 +431,12 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
       sendRaw(`G10 L20 P0 Z${number(plateThick)}`)
       sendRaw(`G21 G91 G0 Z${number(retract)}`)
       sendRaw('G90')
-      finish('Z surface captured and work offset updated.')
+      const referenceRegistered = !hasManualATC || completeReferenceSetup()
+      finish(hasManualATC && referenceRegistered
+        ? 'Z surface captured and the installed tool is now the tool-change reference.'
+        : hasManualATC
+          ? 'Z surface captured, but the tool-change reference could not be registered.'
+          : 'Z surface captured and work offset updated.')
       return
     }
 
@@ -460,7 +469,7 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
     const second = axisValue(point, axis)
     const bothAxes = active.id === 'bore-center' || active.id === 'rectangle-center'
     finishAxisCenter(axis, active.first!, second, bothAxes && axis === 'X')
-  }), [maxTravel, plateThick, probeDiameter, probeFeed, retract])
+  }), [completeReferenceSetup, hasManualATC, maxTravel, plateThick, probeDiameter, probeFeed, retract])
 
   useEffect(() => onSoftReset(() => {
     if (!runningRef.current) return
@@ -496,6 +505,10 @@ export function ProbePanel({ isTablet, embedded = false }: { isTablet?: boolean;
     if (!canProbe || running || (toolsetterOnly && selected !== 'z-surface')
       || probeFeed <= 0 || maxTravel <= 0 || retract <= 0) return
     setCompletedCycle(null)
+    if (selected === 'z-surface' && hasManualATC && !resetToolReference()) {
+      setMessage('Could not reset the tool-change reference before probing.')
+      return
+    }
     pauseBackgroundTraffic()
     const edge = selected.match(/^([xy])-(negative|positive)$/)
     if (selected === 'z-surface') {

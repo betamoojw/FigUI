@@ -109,6 +109,7 @@ export interface ControllerSettings {
   hasFlood?: boolean
   hasProbe?: boolean
   hasToolsetter?: boolean
+  hasManualATC?: boolean
   reportInches?: boolean
 }
 

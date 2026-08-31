@@ -475,6 +475,10 @@ function parseProbeCapabilityLine(line: string): ProbeCapabilityReport | null {
   }
 }
 
+function isManualATCCapabilityLine(line: string) {
+  return /^\[MSG:INFO:\s*ATC:\s*atc_manual\s*\]$/i.test(line)
+}
+
 function handleLine(line: string) {
   connectionHealth.lastResponseTime = Date.now()
   if (connectionHealth.missedPings !== 0) {
@@ -542,6 +546,10 @@ function handleLine(line: string) {
     useMachineStore.getState().updateControllerSettings(probeCapability.kind === 'probe'
       ? { hasProbe: probeCapability.enabled }
       : { hasToolsetter: probeCapability.enabled })
+  }
+
+  if (isManualATCCapabilityLine(line)) {
+    useMachineStore.getState().updateControllerSettings({ hasManualATC: true })
   }
 
   if (line === 'ok' || line === 'error') {
@@ -734,6 +742,7 @@ export async function sendStartupQueries() {
     const ssText = await sendCommand('$SS')
     const hasMist  = /\[MSG:INFO:\s*Mist coolant/i.test(ssText)
     const hasFlood = /\[MSG:INFO:\s*Flood coolant/i.test(ssText)
+    const hasManualATC = ssText.split('\n').some(raw => isManualATCCapabilityLine(raw.trim()))
     if (hasMist || hasFlood) useMachineStore.getState().updateControllerSettings({ hasMist, hasFlood })
     const probeReports = ssText.split('\n')
       .map(raw => parseProbeCapabilityLine(raw.trim()))
@@ -741,6 +750,7 @@ export async function sendStartupQueries() {
     useMachineStore.getState().updateControllerSettings({
       hasProbe: probeReports.some(report => report.kind === 'probe' && report.enabled),
       hasToolsetter: probeReports.some(report => report.kind === 'toolsetter' && report.enabled),
+      hasManualATC,
     })
     ssText.split('\n').forEach(raw => {
       const line = raw.trim()

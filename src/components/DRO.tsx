@@ -6,6 +6,7 @@ import { jogFeedKeyForAxis, loadPersistedJogFeed } from '../lib/jog'
 import { clearMachineAlarm } from '../lib/alarm'
 import { droFeedUnitLabel, formatAxisCoord, formatFeedRate } from '../lib/units'
 import { useControllerJobStarting } from '../lib/jobState'
+import { useManualAtcStore } from '../store/manualAtc'
 
 const ALARM_MESSAGES: Record<number, string> = {
   1: 'Hard limit triggered',
@@ -86,6 +87,9 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   const setPositionMode = useMachineStore(s => s.setPositionMode)
   const axes = useMachineStore(s => s.axes)
   const units = useMachineStore(s => s.units)
+  const hasManualATC = useMachineStore(s => s.controllerSettings.hasManualATC === true)
+  const resetToolReference = useManualAtcStore(s => s.resetReference)
+  const completeReferenceSetup = useManualAtcStore(s => s.completeReferenceSetup)
   const [pendingAxisAction, setPendingAxisAction] = useState<PendingAxisAction | null>(null)
   const [pendingAxisActionStarted, setPendingAxisActionStarted] = useState(false)
   const [workOriginOpen, setWorkOriginOpen] = useState(false)
@@ -167,8 +171,13 @@ export function DRO({ isTablet = false }: { isTablet?: boolean }) {
   }, [workOriginOpen])
 
 
-  function zeroAxis(axis: string) { sendRaw(`G10 L20 P0 ${axis}0`) }
-  function zeroAll() { sendRaw(`G10 L20 P0 ${visibleAxes.map(a => `${a}0`).join(' ')}`) }
+  function setWorkZero(command: string, includesZ: boolean) {
+    if (includesZ && hasManualATC && !resetToolReference()) return
+    if (!sendRaw(command)) return
+    if (includesZ && hasManualATC) completeReferenceSetup()
+  }
+  function zeroAxis(axis: string) { setWorkZero(`G10 L20 P0 ${axis}0`, axis === 'Z') }
+  function zeroAll() { setWorkZero(`G10 L20 P0 ${visibleAxes.map(a => `${a}0`).join(' ')}`, visibleAxes.includes('Z')) }
   function goToZero(axis: string) {
     const [feedKey, fallbackFeed] = jogFeedKeyForAxis(axis)
     const feed = loadPersistedJogFeed(feedKey, fallbackFeed)

@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, FileCode2, Info, Navigation } from '../icon
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { ProbePanel } from './ProbePanel'
+import { ManualATCPanel } from './ManualATCPanel'
 import { useGCodeSenderStore } from '../store/gcodeSender'
 
 const LINE_HEIGHT = 20
@@ -278,12 +279,15 @@ export function ProbeOrProgramPanel({ isTablet }: { isTablet?: boolean }) {
   const status = useMachineStore(s => s.status)
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
   const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
+  const hasManualATC = useMachineStore(s => s.controllerSettings.hasManualATC === true)
   const hasProbingInput = reportedHasProbe || reportedHasToolsetter
   const senderPhase = useGCodeSenderStore(s => s.phase)
   const senderActive = senderPhase === 'streaming' || senderPhase === 'paused' || senderPhase === 'draining'
   const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
     && (!!status.sdFilename || status.plannerLineNumber != null)
-  return (isProgramRunning || senderActive)
-    ? <ProgramExecutionPanel isTablet={isTablet} />
-    : hasProbingInput ? <ProbePanel isTablet={isTablet} /> : null
+  if (isProgramRunning || senderActive) return <ProgramExecutionPanel isTablet={isTablet} />
+  return <>
+    {hasManualATC && <ManualATCPanel isTablet={isTablet} />}
+    {hasProbingInput && <ProbePanel isTablet={isTablet} />}
+  </>
 }

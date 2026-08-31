@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Eye, FolderOpen, Puzzle, Sliders, Target, TerminalSquare, Zap } from '../icons'
+import { ChevronDown, ChevronRight, Eye, FolderOpen, Puzzle, Sliders, Target, TerminalSquare, Wrench, Zap } from '../icons'
 import { Power } from '../icons'
 import { GCodeViewer } from './GCodeViewer'
 import { FileManager } from './FileManager'
 import { Macros } from './Macros'
 import { ProbePanel } from './ProbePanel'
+import { ManualATCPanel } from './ManualATCPanel'
 import { Terminal } from './Terminal'
 import { ProgramExecutionPanel } from './ProgramExecutionPanel'
 import { OverridesPanel, SpindlePanel } from './JogPad'
@@ -26,6 +27,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
   const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
   const hasProbingInput = Boolean(reportedHasProbe || reportedHasToolsetter)
+  const hasManualATC = useMachineStore(s => s.controllerSettings.hasManualATC === true)
   const status = useMachineStore(s => s.status)
   const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
     && (!!status.sdFilename || status.plannerLineNumber != null)
@@ -34,12 +36,15 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
     if (!isProgramRunning && expanded === 'program') setExpanded('visualizer')
     if (!hasProbingInput && portraitTab === 'probing') setPortraitTab('viewer')
     if (!hasProbingInput && tabletTab === 'probing') setTabletTab('viewer')
-  }, [isProgramRunning, expanded, hasProbingInput, portraitTab, tabletTab, setTabletTab])
+    if (!hasManualATC && portraitTab === 'tooling') setPortraitTab('viewer')
+    if (!hasManualATC && tabletTab === 'tooling') setTabletTab('viewer')
+  }, [isProgramRunning, expanded, hasProbingInput, hasManualATC, portraitTab, tabletTab, setTabletTab])
 
   const TABS = [
     { id: 'viewer',   label: 'Viewer',   Icon: Eye },
     { id: 'files',    label: 'Files',    Icon: FolderOpen },
     { id: 'macros',   label: 'Macros',   Icon: Zap },
+    ...(hasManualATC ? [{ id: 'tooling', label: 'Tooling', Icon: Wrench }] : []),
     ...(hasProbingInput ? [{ id: 'probing', label: 'Probing', Icon: Target }] : []),
     { id: 'terminal', label: 'Terminal', Icon: TerminalSquare },
     { id: 'plugins',  label: 'Plugins',  Icon: Puzzle },
@@ -49,6 +54,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
     { id: 'viewer',    label: 'Viewer',    Icon: Eye },
     { id: 'files',     label: 'Files',     Icon: FolderOpen },
     { id: 'macros',    label: 'Macros',    Icon: Zap },
+    ...(hasManualATC ? [{ id: 'tooling', label: 'Tooling', Icon: Wrench }] : []),
     ...(hasProbingInput ? [{ id: 'probing', label: 'Probing', Icon: Target }] : []),
     { id: 'terminal',  label: 'Terminal',  Icon: TerminalSquare },
     ...(hasSpindle ? [{ id: 'spindle', label: 'Spindle', Icon: Power }] : []),
@@ -90,6 +96,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
             )}
             {portraitTab === 'files'     && <FileManager isTablet />}
             {portraitTab === 'macros'    && <Macros isTablet />}
+            {portraitTab === 'tooling' && hasManualATC && <div className="p-3"><ManualATCPanel isTablet embedded /></div>}
             {portraitTab === 'probing' && hasProbingInput && <div className="p-3"><ProbePanel isTablet embedded /></div>}
             {portraitTab === 'terminal'  && <Terminal />}
             {portraitTab === 'spindle' && hasSpindle && (
@@ -149,6 +156,7 @@ export function TabletAccordion({ tabletTab, setTabletTab, onLaunchPanel }: Tabl
                 </div>
                 {tabletTab === 'files'    && <FileManager isTablet />}
                 {tabletTab === 'macros'   && <Macros isTablet />}
+                {tabletTab === 'tooling' && hasManualATC && <div className="h-full overflow-y-auto p-3"><ManualATCPanel isTablet embedded /></div>}
                 {tabletTab === 'probing' && hasProbingInput && <div className="h-full overflow-y-auto p-3"><ProbePanel isTablet embedded /></div>}
                 {tabletTab === 'terminal' && <Terminal />}
                 {tabletTab === 'plugins'  && <PluginLauncher isTablet onLaunchPanel={onLaunchPanel} activeLayout="tablet" />}

@@ -28,6 +28,7 @@ import type { Plugin, SidebarTab, ActiveLayout } from './types'
 import { getEffectiveLayout } from './types'
 import { PluginFrame } from './components/PluginFrame'
 import { DesktopLayout } from './components/DesktopLayout'
+import { ManualATCPrompt } from './components/ManualATCPrompt'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
   { id: 'files',   label: 'Files'   },
@@ -552,6 +553,8 @@ export function App() {
         onSettingsClick={() => setSettingsOpen(true)}
         onAboutClick={() => setAboutOpen(true)}
       />
+
+      <ManualATCPrompt />
 
       {fullPlugin && (
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-3">
