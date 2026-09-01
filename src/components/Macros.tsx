@@ -397,18 +397,19 @@ function MacroCard({ macro, onChange, onDelete, onOpenEditor }: MacroCardProps) 
 
 
 interface NamePromptProps {
-  onConfirm: (name: string, color: Macro['color'], glyph?: string) => void
+  onConfirm: (name: string, color: Macro['color'], target: 'SD' | 'ESP', glyph?: string) => void
   onClose: () => void
 }
 
 function NamePrompt({ onConfirm, onClose }: NamePromptProps) {
   const [name, setName]   = useState('')
   const [color, setColor] = useState<Macro['color']>('default')
+  const [target, setTarget] = useState<'SD' | 'ESP'>('ESP')
   const [glyph, setGlyph] = useState<string | undefined>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { inputRef.current?.focus() }, [])
 
-  function confirm() { onConfirm(name.trim() || 'New Macro', color, glyph) }
+  function confirm() { onConfirm(name.trim() || 'New Macro', color, target, glyph) }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -441,6 +442,33 @@ function NamePrompt({ onConfirm, onClose }: NamePromptProps) {
                 title={c}
               />
             ))}
+          </div>
+        </div>
+        <div>
+          <span className="text-sm text-text-dim uppercase tracking-wider mb-1.5 block">Save location</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className={`flex items-center justify-center gap-1.5 rounded border px-3 py-2 text-sm transition-colors ${
+                target === 'ESP'
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border text-text-muted hover:bg-elevated hover:text-text-primary'
+              }`}
+              onClick={() => setTarget('ESP')}
+            >
+              <Server size={13} /> Internal
+            </button>
+            <button
+              type="button"
+              className={`flex items-center justify-center gap-1.5 rounded border px-3 py-2 text-sm transition-colors ${
+                target === 'SD'
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border text-text-muted hover:bg-elevated hover:text-text-primary'
+              }`}
+              onClick={() => setTarget('SD')}
+            >
+              <HardDrive size={13} /> SD Card
+            </button>
           </div>
         </div>
         {/* Glyph */}
@@ -600,14 +628,14 @@ function MacroGrid({ macros, isTablet, onReorder }: MacroGridProps) {
             onDrop={e => { e.preventDefault(); setDragOver(-1); reorder(dragSrc.current, i) }}
             onDragEnd={() => { dragSrc.current = -1; setDragOver(-1) }}
             className={`btn ${BTN_CLASS[m.color]} flex-col gap-1.5 w-full transition-opacity ${
-              isTablet ? 'h-[110px] text-xl' : 'h-[72px] text-base'
+              isTablet ? 'min-h-[110px] py-3 text-xl' : 'min-h-[72px] py-2 text-base'
             } ${dragOver === i ? 'ring-2 ring-accent ring-offset-1 opacity-70' : ''}`}
             onClick={() => runMacroCmd(m)}
             disabled={!m.command.trim() && !m.filename}
             title={m.label || (m.filename ? 'Ready' : 'No command set')}
           >
             {Icon && <Icon size={isTablet ? 28 : 20} className="shrink-0" />}
-            <span className="font-medium leading-tight text-center px-1 line-clamp-2">
+            <span className="font-medium leading-tight text-center px-1 whitespace-normal break-words">
               {m.label || 'Unnamed'}
             </span>
           </button>
@@ -662,9 +690,9 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
     setShowNamePrompt(true)
   }
 
-  function handleNameConfirm(label: string, color: Macro['color'], glyph?: string) {
+  function handleNameConfirm(label: string, color: Macro['color'], target: 'SD' | 'ESP', glyph?: string) {
     setShowNamePrompt(false)
-    setEditorMacro({ id: Date.now().toString(), label, command: '', color, glyph })
+    setEditorMacro({ id: Date.now().toString(), label, command: '', color, target, glyph })
   }
 
   // Save the imported macro (from file) after name/color are set
@@ -701,12 +729,12 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
     setSaveError(false)
 
     try {
-      // Always save scratch macros to internal storage
-      const target: 'SD' | 'ESP' = 'ESP'
+      const target: 'SD' | 'ESP' = editorMacro.target ?? 'ESP'
+      const filesystem: BrowserFs = target === 'SD' ? 'sd' : 'local'
 
       // Create .macros folder if it doesn't exist
       try {
-        await createDir('/', '.macros', 'local')
+        await createDir('/', '.macros', filesystem)
       } catch {
         // Folder may already exist
       }
@@ -723,7 +751,7 @@ export function Macros({ isTablet }: { isTablet?: boolean }) {
         filePath = `/.macros/${filename}`
       }
 
-      await saveFileContent('/.macros', filename, content, 'local')
+      await saveFileContent('/.macros', filename, content, filesystem)
 
       // Create macro entry with file reference
       const entry: Macro = {
