@@ -453,15 +453,23 @@ export function App() {
   // On mobile/tablet, switch to the viewer when a file is selected; also kick off
   // the single shared download via the gcode store.
   useEffect(() => {
+    function showGcodeViewer() {
+      setMobilePanel('viewer')
+      setTabletTab('viewer')
+    }
+
     function onGcodeLoad(e: Event) {
       if (machineState === 'Run' || machineState === 'Hold') return
       const path = (e as CustomEvent<string>).detail
       loadGCodeFile(path)
-      setMobilePanel('viewer')
-      setTabletTab('viewer')
+      showGcodeViewer()
     }
     window.addEventListener('gcode:load', onGcodeLoad as EventListener)
-    return () => window.removeEventListener('gcode:load', onGcodeLoad as EventListener)
+    window.addEventListener('gcode:preview-upload', showGcodeViewer)
+    return () => {
+      window.removeEventListener('gcode:load', onGcodeLoad as EventListener)
+      window.removeEventListener('gcode:preview-upload', showGcodeViewer)
+    }
   }, [loadGCodeFile, machineState])
 
   if (phase === 'connecting') {

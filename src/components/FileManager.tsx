@@ -31,6 +31,7 @@ import {
 } from "../lib/http";
 import { CodeEditor, isEditable } from "./CodeEditor";
 import { useMachineStore } from "../store";
+import { useGCodeStore } from "../store/gcode";
 import type { FileEntry, FileListResult } from "../types";
 import { isGCodeFileName } from "../lib/gcodeFiles";
 
@@ -426,6 +427,10 @@ export function prefetchInternalFiles() {
 export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const espInfo = useMachineStore((s) => s.espInfo);
   const machineState = useMachineStore((s) => s.status.state);
+  const loadGCodeFromText = useGCodeStore((s) => s.loadFromText);
+  const beginSdUpload = useGCodeStore((s) => s.beginSdUpload);
+  const completeSdUpload = useGCodeStore((s) => s.completeSdUpload);
+  const failSdUpload = useGCodeStore((s) => s.failSdUpload);
   const primarySd = espInfo?.primarySd ?? "/sd/";
   const canLoadGcode = machineState !== "Run" && machineState !== "Hold";
 
@@ -617,22 +622,49 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   }
 
   async function handleUpload(files: FileList | null) {
-    if (!files || !files.length) return;
+    if (!files || !files.length || uploading) return;
     setUploading(true);
     setUploadTotal(files.length);
     setUploadPct(0);
     try {
       for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const previewPath =
+          fs === "sd" && isGcode(file.name)
+            ? `${path.endsWith("/") ? path : `${path}/`}${file.name}`
+            : null;
+        let previewLoad: Promise<void> | null = null;
+
         setUploadIdx(i + 1);
         setUploadPct(0);
         setUploadPhase("preparing");
-        await uploadFile(
-          path,
-          files[i],
-          fs,
-          (p) => setUploadPct(p),
-          setUploadPhase,
-        );
+        if (previewPath) {
+          // Load from the local File so the preview is available while the SD
+          // transfer runs, but retain the card path for the eventual Start.
+          beginSdUpload(previewPath);
+          window.dispatchEvent(new Event("gcode:preview-upload"));
+          previewLoad = file
+            .text()
+            .then((text) => loadGCodeFromText(text, file.name, previewPath));
+        }
+
+        try {
+          await uploadFile(
+            path,
+            file,
+            fs,
+            (p) => setUploadPct(p),
+            setUploadPhase,
+          );
+          await previewLoad;
+          if (previewPath) completeSdUpload(previewPath);
+        } catch (e) {
+          // Let the preview request settle before removing it, so it cannot
+          // finish later and re-enable Start for an incomplete SD file.
+          await previewLoad?.catch(() => {});
+          if (previewPath) failSdUpload(previewPath);
+          throw e;
+        }
       }
       load(path, fs);
     } catch (e) {

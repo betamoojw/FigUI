@@ -49,12 +49,15 @@ interface GCodeStore {
   // Loading state
   loading: boolean
   pendingPath: string | null
+  pendingFileName: string | null
   downloadProgress: number | null
   isProcessing2D: boolean
   processing2DProgress: number
   isProcessing3D: boolean
   processing3DProgress: number
   is3DReady: boolean
+  /** SD-card path currently being uploaded for the selected preview. */
+  sdUploadPath: string | null
 
   // Job completion feedback
   trackedJob: { source: TrackedJobSource; startedAt: number } | null
@@ -75,6 +78,9 @@ interface GCodeStore {
   dismissFinishedJobNotice: () => void
   setShowRapids: (v: boolean) => void
   setActiveSourceLine: (line: number | null) => void
+  beginSdUpload: (path: string) => void
+  completeSdUpload: (path: string) => void
+  failSdUpload: (path: string) => void
   clear: () => void
 }
 
@@ -172,12 +178,14 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
   showRapids: true,
   loading: false,
   pendingPath: null,
+  pendingFileName: null,
   downloadProgress: null,
   isProcessing2D: false,
   processing2DProgress: 0,
   isProcessing3D: false,
   processing3DProgress: 0,
   is3DReady: false,
+  sdUploadPath: null,
   trackedJob: null,
   finishedJobElapsedMs: null,
 
@@ -193,6 +201,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     set({
       loading: true,
       pendingPath: path,
+      pendingFileName: path.split('/').pop() ?? path,
       downloadProgress: 0,
       isProcessing2D: false,
       processing2DProgress: 0,
@@ -280,6 +289,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
         isProcessing2D: false,
         loading: false,
         pendingPath: null,
+        pendingFileName: null,
         isProcessing3D: true,
         processing3DProgress: 0,
       })
@@ -317,6 +327,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
         set({
           loading: false,
           pendingPath: null,
+          pendingFileName: null,
           isProcessing2D: false,
           isProcessing3D: false,
           is3DReady: get().geometry3D !== null,
@@ -334,6 +345,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     set({
       loading: true,
       pendingPath: null,
+      pendingFileName: name,
       downloadProgress: 100,
       isProcessing2D: true,
       processing2DProgress: 5,
@@ -375,6 +387,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
         processing2DProgress: 100,
         isProcessing2D: false,
         loading: false,
+        pendingFileName: null,
         isProcessing3D: true,
         processing3DProgress: 0,
       })
@@ -404,6 +417,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       if (requestId === loadRequestId) {
         set({
           loading: false,
+          pendingFileName: null,
           isProcessing2D: false,
           isProcessing3D: false,
           is3DReady: get().geometry3D !== null,
@@ -419,6 +433,7 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     set({
       loading: false,
       pendingPath: null,
+      pendingFileName: null,
       isProcessing2D: false,
       isProcessing3D: false,
       downloadProgress: null,
@@ -498,6 +513,43 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
     set({ activeSourceLine: line })
   },
 
+  beginSdUpload: path => set({ sdUploadPath: path }),
+
+  completeSdUpload: path => {
+    if (get().sdUploadPath === path) set({ sdUploadPath: null })
+  },
+
+  failSdUpload: path => {
+    // Do not leave a preview pointing at an SD file that did not finish
+    // uploading. A newer preview may have replaced it while the request ran.
+    if (get().sdUploadPath !== path) return
+    if (get().loadedPath === path) {
+      abortInFlight()
+      set({
+        loadedPath: null,
+        fileName: null,
+        sourceText: null,
+        restartSource: null,
+        activeSourceLine: null,
+        model: null,
+        paths2D: null,
+        geometry3D: null,
+        loading: false,
+        pendingPath: null,
+        pendingFileName: null,
+        downloadProgress: null,
+        isProcessing2D: false,
+        processing2DProgress: 0,
+        isProcessing3D: false,
+        processing3DProgress: 0,
+        is3DReady: false,
+        sdUploadPath: null,
+      })
+      return
+    }
+    set({ sdUploadPath: null })
+  },
+
   clear: () => {
     abortInFlight()
     set({
@@ -511,12 +563,14 @@ export const useGCodeStore = create<GCodeStore>((set, get) => ({
       geometry3D: null,
       loading: false,
       pendingPath: null,
+      pendingFileName: null,
       downloadProgress: null,
       isProcessing2D: false,
       processing2DProgress: 0,
       isProcessing3D: false,
       processing3DProgress: 0,
       is3DReady: false,
+      sdUploadPath: null,
     })
   },
 }))

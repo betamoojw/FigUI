@@ -1215,12 +1215,14 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
   const restartSource = useGCodeStore(s => s.restartSource)
   const loading = useGCodeStore(s => s.loading)
   const pendingPath = useGCodeStore(s => s.pendingPath)
+  const pendingFileName = useGCodeStore(s => s.pendingFileName)
   const downloadProgress = useGCodeStore(s => s.downloadProgress)
   const isProcessing2D = useGCodeStore(s => s.isProcessing2D)
   const processing2DProgress = useGCodeStore(s => s.processing2DProgress)
   const isProcessing3D = useGCodeStore(s => s.isProcessing3D)
   const processing3DProgress = useGCodeStore(s => s.processing3DProgress)
   const is3DReady = useGCodeStore(s => s.is3DReady)
+  const sdUploadPath = useGCodeStore(s => s.sdUploadPath)
   const showRapids = useGCodeStore(s => s.showRapids)
   const setShowRapids = useGCodeStore(s => s.setShowRapids)
   const storePaths2D = useGCodeStore(s => s.paths2D)
@@ -1859,7 +1861,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
     if (cancelAndStartJob(path)) startTrackedJob('controller')
   }, [pendingPath, cancelAndStartJob, startTrackedJob])
 
-  const isViewerStartBlocked = loading || isProcessing2D || pendingPath !== null || controllerResetPending
+  const isViewerStartBlocked = loading || isProcessing2D || pendingPath !== null || !!sdUploadPath || controllerResetPending
   const is3DToggleDisabled = pendingPath !== null || isProcessing2D || (!!model && !is3DReady)
   const [autoFollow, setAutoFollow] = useState(true)
   const [coolantState, setCoolantState] = useState<'off' | 'mist' | 'flood'>('off')
@@ -3091,7 +3093,7 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
           <div className="absolute inset-0 flex items-center justify-center bg-surface/70 backdrop-blur-sm px-4">
             <div className="w-full max-w-md rounded-xl border border-border bg-surface/95 shadow-lg p-4 space-y-3">
               <div className="text-base text-text-primary font-mono truncate">
-                {pendingPath?.split('/').pop() ?? fileName ?? 'Loading file'}
+                {pendingFileName ?? pendingPath?.split('/').pop() ?? fileName ?? 'Loading file'}
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-base text-text-dim uppercase tracking-wide">
@@ -3621,7 +3623,11 @@ export function GCodeViewer({ className, isTablet, showOverrides, fitToViewSigna
               }}
               disabled={(!loadedPath && !isLocalFile) || !connected || status.state !== 'Idle' || isViewerStartBlocked}
               title={isViewerStartBlocked
-                ? controllerResetPending ? 'Controller is resetting after the abort' : 'Wait for file processing to finish before starting the job'
+                ? controllerResetPending
+                  ? 'Controller is resetting after the abort'
+                  : sdUploadPath
+                    ? 'Wait for the SD-card upload to finish before starting the job'
+                    : 'Wait for file processing to finish before starting the job'
                 : isLocalFile ? 'Stream this local file to FluidNC' : 'Start job from loaded controller file'}
             >
               <Play size={isTablet ? 18 : 14} />
