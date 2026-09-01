@@ -1,11 +1,12 @@
 import { useMachineStore } from '../store'
 import { useManualAtcStore } from '../store/manualAtc'
+import { Wrench } from '../icons'
 
 export function ManualATCPanel({ isTablet, embedded = false }: { isTablet?: boolean; embedded?: boolean }) {
   const connected = useMachineStore(s => s.connected)
   const status = useMachineStore(s => s.status)
   const settings = useMachineStore(s => s.controllerSettings)
-  const resetReference = useManualAtcStore(s => s.resetReference)
+  const completeReferenceSetup = useManualAtcStore(s => s.completeReferenceSetup)
   const requestToolChange = useManualAtcStore(s => s.requestToolChange)
 
   if (settings.hasManualATC !== true) return null
@@ -16,18 +17,21 @@ export function ManualATCPanel({ isTablet, embedded = false }: { isTablet?: bool
   const buttonClass = `btn w-full justify-center ${isTablet ? 'h-16 text-xl' : 'h-11 text-base'}`
 
   return <div className={embedded ? '' : 'panel'}>
-    <div className="panel-header justify-between">
-      <span>Manual Tool Change</span>
+    {!embedded && <div className="panel-header justify-between">
+      <div className="flex items-center gap-2">
+        <Wrench size={isTablet ? 20 : 15} />
+        <span className="text-lg font-semibold">Manual ATC</span>
+      </div>
       {currentTool != null && currentTool > 0 && <span className="text-text-muted">Tool T{currentTool}</span>}
-    </div>
+    </div>}
     <div className="grid grid-cols-2 gap-2 p-3">
       <button
         className={`${buttonClass} btn-ghost`}
         disabled={!idle}
-        title="Use before manually setting Z zero on a new workpiece"
-        onClick={resetReference}
+        title="After setting Z zero, register the current tool as Tool 1"
+        onClick={completeReferenceSetup}
       >
-        Reset Tool Reference
+        Set Tool 1
       </button>
       <button
         className={`${buttonClass} btn-warn`}

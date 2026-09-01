@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, ChevronDown, FileCode2, Info, Navigation } from '../icons'
+import { AlertTriangle, ChevronDown, FileCode2, Info, Navigation, Target, Wrench } from '../icons'
 import { useMachineStore } from '../store'
 import { useGCodeStore } from '../store/gcode'
 import { ProbePanel } from './ProbePanel'
@@ -280,14 +280,82 @@ export function ProbeOrProgramPanel({ isTablet }: { isTablet?: boolean }) {
   const reportedHasProbe = useMachineStore(s => s.controllerSettings.hasProbe)
   const reportedHasToolsetter = useMachineStore(s => s.controllerSettings.hasToolsetter)
   const hasManualATC = useMachineStore(s => s.controllerSettings.hasManualATC === true)
-  const hasProbingInput = reportedHasProbe || reportedHasToolsetter
+  const hasProbingInput = Boolean(reportedHasProbe || reportedHasToolsetter)
   const senderPhase = useGCodeSenderStore(s => s.phase)
   const senderActive = senderPhase === 'streaming' || senderPhase === 'paused' || senderPhase === 'draining'
   const isProgramRunning = (status.state === 'Run' || status.state === 'Hold')
     && (!!status.sdFilename || status.plannerLineNumber != null)
   if (isProgramRunning || senderActive) return <ProgramExecutionPanel isTablet={isTablet} />
-  return <>
-    {hasManualATC && <ManualATCPanel isTablet={isTablet} />}
-    {hasProbingInput && <ProbePanel isTablet={isTablet} />}
-  </>
+  return <ProbeAndManualATCPanel
+    isTablet={isTablet}
+    hasProbingInput={hasProbingInput}
+    hasManualATC={hasManualATC}
+  />
+}
+
+function ProbeAndManualATCPanel({
+  isTablet,
+  hasProbingInput,
+  hasManualATC,
+}: {
+  isTablet?: boolean
+  hasProbingInput: boolean
+  hasManualATC: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<'probing' | 'manual-atc'>(
+    hasProbingInput ? 'probing' : 'manual-atc',
+  )
+
+  useEffect(() => {
+    if (activeTab === 'probing' && !hasProbingInput && hasManualATC) setActiveTab('manual-atc')
+    if (activeTab === 'manual-atc' && !hasManualATC && hasProbingInput) setActiveTab('probing')
+  }, [activeTab, hasProbingInput, hasManualATC])
+
+  if (!hasProbingInput && !hasManualATC) return null
+
+  return <div className="panel">
+    <div className="panel-header flex items-center gap-1">
+      <div className="flex min-w-0 flex-1 items-center gap-1" role="tablist" aria-label="Machine tools">
+        {hasProbingInput && <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'probing'}
+          className={`flex items-center gap-2 rounded px-2 py-1 text-lg font-semibold transition-colors ${activeTab === 'probing' ? 'bg-elevated text-text-primary' : 'text-text-muted hover:bg-elevated/50 hover:text-text-primary'}`}
+          onClick={() => {
+            setActiveTab('probing')
+            setOpen(true)
+          }}
+        >
+          <Target size={isTablet ? 20 : 15} />
+          <span>Probing</span>
+        </button>}
+        {hasManualATC && <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'manual-atc'}
+          className={`flex items-center gap-2 rounded px-2 py-1 text-lg font-semibold transition-colors ${activeTab === 'manual-atc' ? 'bg-elevated text-text-primary' : 'text-text-muted hover:bg-elevated/50 hover:text-text-primary'}`}
+          onClick={() => {
+            setActiveTab('manual-atc')
+            setOpen(true)
+          }}
+        >
+          <Wrench size={isTablet ? 20 : 15} />
+          <span>Manual ATC</span>
+        </button>}
+      </div>
+      <button
+        type="button"
+        className="flex shrink-0 items-center rounded p-1 hover:bg-elevated/50"
+        onClick={() => setOpen(value => !value)}
+        aria-label={open ? 'Collapse tools' : 'Expand tools'}
+        aria-expanded={open}
+      >
+        <ChevronDown size={isTablet ? 20 : 15} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+    </div>
+    {open && (activeTab === 'probing'
+      ? <ProbePanel isTablet={isTablet} embedded />
+      : <ManualATCPanel isTablet={isTablet} embedded />)}
+  </div>
 }

@@ -17,7 +17,7 @@ export function ManualATCPrompt() {
       <h2 className="text-xl font-semibold text-text-primary">
         {requestedTool != null ? `Install Tool T${requestedTool}` : 'Change Tool'}
       </h2>
-      <p className="mt-2 text-text-muted">Install the next tool and continue when ready.</p>
+      <p className="mt-3 text-lg font-medium leading-snug text-text-primary">Install the next tool and continue when ready.</p>
       <button className="btn btn-ok-solid mt-5 h-12 w-full justify-center text-lg" disabled={!ready} onClick={resumeToolChange}>
         {phase === 'resuming' ? 'Proceeding…' : machineState === 'Door' ? 'Close Door' : ready ? 'Ready' : 'Moving to Change Position…'}
       </button>
