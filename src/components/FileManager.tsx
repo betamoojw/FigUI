@@ -36,6 +36,7 @@ import type { FileEntry, FileListResult } from "../types";
 import { isGCodeFileName } from "../lib/gcodeFiles";
 
 type Filesystem = "sd" | "local";
+type UploadTarget = { fs: Filesystem; path: string; name: string };
 
 const isGcode = isGCodeFileName;
 const isYamlFile = (name: string) => /\.ya?ml$/i.test(name);
@@ -448,6 +449,8 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   >("preparing");
   const [uploadIdx, setUploadIdx] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
+  const [highlightedUpload, setHighlightedUpload] =
+    useState<UploadTarget | null>(null);
   const [newDirName, setNewDirName] = useState("");
   const [showNewDir, setShowNewDir] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -470,6 +473,8 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
   const [deletingSelected, setDeletingSelected] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const fileListRef = useRef<HTMLDivElement>(null);
+  const uploadedRowRef = useRef<HTMLDivElement>(null);
 
   const sdRoot = primarySd;
   const localRoot = "/";
@@ -583,8 +588,42 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
     });
   }, [result]);
 
+  useEffect(() => {
+    if (
+      !highlightedUpload ||
+      highlightedUpload.fs !== fs ||
+      highlightedUpload.path !== path ||
+      !result?.files.some((entry) => entry.name === highlightedUpload.name)
+    ) {
+      return;
+    }
+
+    // This pane owns its scroll position. Calling scrollIntoView() here can
+    // instead scroll an outer layout container, leaving the file list still.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const list = fileListRef.current;
+        const row = uploadedRowRef.current;
+        if (!list || !row) return;
+        list.scrollTo({
+          behavior: "smooth",
+          top: Math.max(0, row.offsetTop - (list.clientHeight - row.offsetHeight) / 2),
+        });
+      });
+    });
+    const clearHighlight = window.setTimeout(
+      () => setHighlightedUpload(null),
+      3_000,
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(clearHighlight);
+    };
+  }, [fs, highlightedUpload, path, result]);
+
   function switchFs(newFs: Filesystem) {
     _fmLastFs = newFs;
+    setHighlightedUpload(null);
     setSelectionMode(false);
     setSelectedNames(new Set());
     setFs(newFs);
@@ -601,6 +640,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
   function navigate(p: string) {
     setSearch("");
+    setHighlightedUpload(null);
     setSelectionMode(false);
     setSelectedNames(new Set());
     load(p, fs);
@@ -608,6 +648,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
 
   function goUp() {
     setSearch("");
+    setHighlightedUpload(null);
     setSelectionMode(false);
     setSelectedNames(new Set());
     const root = fs === "sd" ? sdRoot : localRoot;
@@ -666,7 +707,13 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
           throw e;
         }
       }
-      load(path, fs);
+      await load(path, fs);
+      setSearch("");
+      setHighlightedUpload({
+        fs,
+        path,
+        name: files[files.length - 1].name,
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -1098,6 +1145,7 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
       )}
 
       <div
+        ref={fileListRef}
         className="flex-1 overflow-y-auto min-h-0 relative"
         onDragOver={(e) => {
           e.preventDefault();
@@ -1154,7 +1202,20 @@ export function FileManager({ isTablet }: { isTablet?: boolean }) {
         {visibleEntries.map((entry) => (
           <div
             key={entry.name}
-            className="border-b border-border last:border-b-0"
+            ref={
+              highlightedUpload?.fs === fs &&
+              highlightedUpload.path === path &&
+              highlightedUpload.name === entry.name
+                ? uploadedRowRef
+                : null
+            }
+            className={`border-b border-border last:border-b-0 transition-colors ${
+              highlightedUpload?.fs === fs &&
+              highlightedUpload.path === path &&
+              highlightedUpload.name === entry.name
+                ? "bg-info/10 ring-1 ring-inset ring-info/40"
+                : ""
+            }`}
           >
             <FileRow
               isTablet={isTablet}
