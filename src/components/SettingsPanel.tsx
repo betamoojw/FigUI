@@ -39,6 +39,7 @@ type Setting = FluidNCSetting;
 
 const PREFIX_TO_CAT: Record<string, string> = {
   WiFi: "wifi",
+  Network: "wifi",
   Sta: "wifi",
   AP: "wifi",
   Hostname: "wifi",
@@ -173,6 +174,12 @@ const GROUP_LABELS: Record<string, string> = {
   WiFi: "General",
   Sta: "Station (STA)",
   AP: "Access Point (AP)",
+  Network: "Network Connection",
+  HTTP: "HTTP Server",
+  Telnet: "Telnet Server",
+  MDNS: "mDNS",
+  Bluetooth: "Bluetooth",
+  Notification: "Notifications",
   Hostname: "Hostname",
   uart1: "UART 1",
   uart2: "UART 2",
@@ -219,7 +226,26 @@ function searchBreadcrumb(s: Setting): string {
 
 function displayLabel(s: Setting): string {
   const parts = s.P.split("/").filter(Boolean);
+  const service = parts[0];
   const last = parts[parts.length - 1] ?? s.P;
+
+  // A Services page combines settings from several independent protocols. The
+  // firmware uses generic leaf names such as "Enable" and "Port", but showing
+  // those names on their own makes it too easy to change the wrong service.
+  if (catOf(s) === "services") {
+    const serviceLabel = groupLabel(service);
+    if (last === "Enable") return `Enable ${serviceLabel}`;
+    if (last === "Port") return `${serviceLabel} Port`;
+    if (last === "Name") return `${serviceLabel} Name`;
+    if (/^T\d+$/i.test(last) || last === "TS")
+      return `${serviceLabel} Setting ${last}`;
+  }
+
+  if (service === "Network") {
+    if (last === "Enable") return "Enable Network Connection";
+    if (last === "Type") return "Connection Type";
+  }
+
   return humanizeKey(last);
 }
 
@@ -1788,7 +1814,7 @@ export function SettingsPanel({
     if (filter.trim()) {
       return visibleSettings.map((s) => ({ type: "setting", setting: s }));
     }
-    if (category === "config" || category === "wifi")
+    if (category === "config" || category === "wifi" || category === "services")
       return buildGroupedItems(visibleSettings, subKey);
     return visibleSettings.map((s) => ({ type: "setting", setting: s }));
   }, [visibleSettings, category, subKey, filter]);
