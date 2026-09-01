@@ -8,8 +8,9 @@ import {
   sendRaw,
   suspendBackgroundTraffic,
 } from '../lib/ws'
+import { parseLimitSnapshotLine } from '../lib/fluidncReports'
 
-const AXIS_ORDER = ['x', 'y', 'z', 'a', 'b', 'c']
+const AXIS_ORDER = ['x', 'y', 'z', 'a', 'b', 'c', 'u', 'v', 'w']
 
 interface SettingValue {
   P: string
@@ -18,13 +19,6 @@ interface SettingValue {
 
 interface Props {
   settings: SettingValue[]
-}
-
-interface LimitColumns {
-  pos: number
-  neg: number
-  probe: number
-  toolsetter: number
 }
 
 interface LimitSnapshot {
@@ -105,42 +99,6 @@ function sameStrings(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
-function parseSnapshotLine(line: string, columns: LimitColumns): Pick<
-  LimitSnapshot,
-  'positive' | 'negative' | 'probe' | 'toolsetter'
-> {
-  const payload = line.slice(line.indexOf(':') + 1)
-  const positiveEnd = Math.ceil((columns.pos + columns.neg) / 2)
-  const negativeEnd = Math.ceil((columns.neg + columns.probe) / 2)
-  const probeEnd = Math.ceil((columns.probe + columns.toolsetter) / 2)
-  const positive = parseAxesWithMotor(payload.slice(columns.pos, positiveEnd))
-  const negative = parseAxesWithMotor(payload.slice(positiveEnd, negativeEnd))
-  const probe = payload.slice(negativeEnd, probeEnd).trim().length > 0
-  const toolsetter = payload.slice(probeEnd).trim().length > 0
-  return { positive, negative, probe, toolsetter }
-}
-
-function parseHeaderColumns(line: string): LimitColumns | null {
-  const payloadStart = line.indexOf(':') >= 0 ? line.indexOf(':') + 1 : 0
-  const payload = line.slice(payloadStart)
-  const pos = payload.indexOf('PosLimitPins')
-  const neg = payload.indexOf('NegLimitPins')
-  const probe = payload.indexOf('Probe', neg)
-  const toolsetter = payload.indexOf('Toolsetter', probe)
-  if (pos >= 0 && neg > pos && probe > neg && toolsetter > probe) {
-    return { pos, neg, probe, toolsetter }
-  }
-  return null
-}
-
-function parseAxesWithMotor(value: string): string[] {
-  return [...new Set(value.match(/[a-z]/gi) ?? [])].sort((a, b) => {
-    const axisDiff = axisSort(a.toLowerCase(), b.toLowerCase())
-    if (axisDiff !== 0) return axisDiff
-    return a.localeCompare(b)
-  })
-}
-
 function hasActiveAxis(activeLetters: string[], axis: string): boolean {
   return activeLetters.some(letter => letter.toLowerCase() === axis)
 }
@@ -187,7 +145,7 @@ export function LimitsTab({ settings }: Props) {
   const [phase, setPhase] = useState<'starting' | 'live' | 'error'>('starting')
   const [error, setError] = useState('')
   const [session, setSession] = useState(0)
-  const columnsRef = useRef<LimitColumns | null>(null)
+  const headerSeenRef = useRef(false)
   const recognizedResponseRef = useRef(false)
 
   const configuredLimits = useMemo(() => parseConfiguredLimits(settings), [settings])
@@ -196,7 +154,7 @@ export function LimitsTab({ settings }: Props) {
     setSnapshot(EMPTY_SNAPSHOT)
     setPhase('starting')
     setError('')
-    columnsRef.current = null
+    headerSeenRef.current = false
     recognizedResponseRef.current = false
 
     if (!connected) {
@@ -233,19 +191,16 @@ export function LimitsTab({ settings }: Props) {
       }
 
       if (line.includes('PosLimitPins') && line.includes('NegLimitPins')) {
-        const columns = parseHeaderColumns(line)
-        if (columns) {
-          columnsRef.current = columns
-          markLive()
-        }
+        headerSeenRef.current = true
+        markLive()
         return
       }
 
-      const columns = columnsRef.current
-      if (!columns || !line.startsWith(':')) return
+      if (!headerSeenRef.current || !line.startsWith(':')) return
 
+      const next = parseLimitSnapshotLine(line)
+      if (!next) return
       markLive()
-      const next = parseSnapshotLine(line, columns)
       setSnapshot(current => {
         if (
           sameStrings(current.positive, next.positive) &&

@@ -11,13 +11,13 @@ import {
 import { useMachineStore } from '../store'
 import { useManualAtcStore } from '../store/manualAtc'
 import { displayToMm, feedUnitLabel, linearUnitLabel, mmToDisplay } from '../lib/units'
+import { parseProbePoint, type ProbePoint } from '../lib/fluidncReports'
 
 type Axis = 'X' | 'Y' | 'Z'
 type Side = 'negative' | 'positive'
 type CycleId = 'z-surface' | 'x-negative' | 'x-positive' | 'y-negative' | 'y-positive'
   | 'x-center' | 'y-center' | 'bore-center' | 'rectangle-center'
 
-interface ProbePoint { x: number; y: number; z: number }
 interface RunningCycle { id: CycleId; phase: string; first?: number }
 type ProbeStepState = 'idle' | 'pending' | 'active' | 'completed'
 
@@ -76,12 +76,6 @@ function usePersisted<T>(key: string, init: T): [T, (v: T) => void] {
 
 function number(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(4)) : 0
-}
-
-function parseProbePoint(line: string): ProbePoint | null {
-  const match = line.match(/^\[PRB:([+-]?[\d.]+),([+-]?[\d.]+),([+-]?[\d.]+):1\]$/i)
-  if (!match) return null
-  return { x: Number(match[1]), y: Number(match[2]), z: Number(match[3]) }
 }
 
 function alarmMessageFromLine(line: string): string | null {
