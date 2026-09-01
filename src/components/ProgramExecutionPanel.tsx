@@ -321,7 +321,7 @@ function ProbeAndManualATCPanel({
           type="button"
           role="tab"
           aria-selected={activeTab === 'probing'}
-          className={`flex items-center gap-2 rounded px-2 py-1 text-lg font-semibold transition-colors ${activeTab === 'probing' ? 'bg-elevated text-text-primary' : 'text-text-muted hover:bg-elevated/50 hover:text-text-primary'}`}
+          className={`flex items-center gap-2 rounded px-2 py-1 text-lg font-semibold transition-colors ${open && activeTab === 'probing' ? 'bg-elevated text-text-primary' : 'text-text-muted hover:bg-elevated/50 hover:text-text-primary'}`}
           onClick={() => {
             setActiveTab('probing')
             setOpen(true)
@@ -334,7 +334,7 @@ function ProbeAndManualATCPanel({
           type="button"
           role="tab"
           aria-selected={activeTab === 'manual-atc'}
-          className={`flex items-center gap-2 rounded px-2 py-1 text-lg font-semibold transition-colors ${activeTab === 'manual-atc' ? 'bg-elevated text-text-primary' : 'text-text-muted hover:bg-elevated/50 hover:text-text-primary'}`}
+          className={`flex items-center gap-2 rounded px-2 py-1 text-lg font-semibold transition-colors ${open && activeTab === 'manual-atc' ? 'bg-elevated text-text-primary' : 'text-text-muted hover:bg-elevated/50 hover:text-text-primary'}`}
           onClick={() => {
             setActiveTab('manual-atc')
             setOpen(true)

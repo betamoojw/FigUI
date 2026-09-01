@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X, Download, CheckCircle2, AlertCircle, ArrowUp, RefreshCw } from 'lucide-react'
+import { X, Download, CheckCircle2, AlertCircle, ArrowUp, RefreshCw, Heart } from 'lucide-react'
 import fluidncLogo from '../assets/fluidnc-logo.svg'
 import { useMachineStore } from '../store'
 import { uploadFile } from '../lib/http'
@@ -388,6 +388,29 @@ export function AboutModal({ onClose }: Props) {
                 Firmware: {espInfo.version}
               </div>
             )}
+          </div>
+
+          {/* Project support */}
+          <div className="px-5 py-4 border-b border-border">
+            <a
+              href="https://github.com/sponsors/figamore"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3.5 py-3 transition-colors hover:bg-accent/20"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent group-hover:scale-110 transition-transform">
+                <Heart size={16} fill="currentColor" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-text-primary">
+                  Support this project
+                </span>
+                <span className="block text-[12px] text-text-muted">
+                  Donations help fund new features and improvements.
+                </span>
+              </span>
+              <span className="ml-auto text-[12px] font-semibold text-accent">Sponsor ↗</span>
+            </a>
           </div>
 
           {/* Update checker */}
